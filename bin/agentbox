@@ -5,7 +5,7 @@
 #   agentbox build [docker args]    build the project image agentbox-<project> (e.g. --no-cache)
 #   agentbox setup [args]           run the project's own <repo>/.agentbox/setup, when it has one
 #   agentbox up N                   start agent N: compose up, hosts entry, net-log, bootstrap
-#   agentbox sh N                   shell into agent N
+#   agentbox sh N                   shell into agent N, with your TERM, COLORTERM and TERM_PROGRAM
 #   agentbox down N                 stop agent N, keep its volumes
 #   agentbox destroy N              stop agent N and remove its volumes (<project>-agent-N-*)
 #   agentbox ps                     list this project's agents
@@ -129,8 +129,12 @@ remove_completed_containers() {
 
 cmd_sh() {
   load_settings; agent_env "${1:?usage: agentbox sh N}"
-  compose exec -e TERM="${TERM:-xterm-256color}" -e COLORTERM="${COLORTERM:-truecolor}" \
-    agent "${AGENT_SHELL:-bash}"
+  # The terminal's identity travels with you: Claude Code only enables its enhanced keyboard protocol
+  # (Shift+Enter for a newline, among others) when TERM_PROGRAM names a terminal it knows.
+  local -a term_env=(-e TERM="${TERM:-xterm-256color}" -e COLORTERM="${COLORTERM:-truecolor}")
+  [ -n "${TERM_PROGRAM:-}" ] && term_env+=(-e TERM_PROGRAM="$TERM_PROGRAM")
+  [ -n "${TERM_PROGRAM_VERSION:-}" ] && term_env+=(-e TERM_PROGRAM_VERSION="$TERM_PROGRAM_VERSION")
+  compose exec "${term_env[@]}" agent "${AGENT_SHELL:-bash}"
 }
 cmd_down() { load_settings; agent_env "${1:?usage: agentbox down N}"; compose down; }
 

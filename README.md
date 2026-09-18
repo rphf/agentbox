@@ -31,7 +31,7 @@ agentbox init                   write ~/.config/agentbox/env from env.example
 agentbox build [docker args]    build agentbox-<project> from <repo>/.agentbox/Dockerfile
 agentbox setup [args]           run the project's own .agentbox/setup, when it ships one
 agentbox up N                   start agent N: compose up, hosts entry, net-log, bootstrap. Idempotent.
-agentbox sh N                   shell into agent N, with your TERM and COLORTERM
+agentbox sh N                   shell into agent N, with your TERM, COLORTERM and TERM_PROGRAM
 agentbox down N                 stop, keep volumes
 agentbox destroy N              stop and remove every volume named <project>-agent-N-*
 agentbox ps                     list this project's agents

@@ -37,8 +37,9 @@ the first project's repository.
   sandbox the one thing it exists to prevent.
 - **Every agent is told where it is.** `~/AGENTBOX.md` is generated per agent and chains to the project's
   `.agentbox/AGENT.md`, so no session spends its first tool calls working out which ports the app uses.
-- **The terminal comes to the sandbox, not the reverse.** `sh` forwards `TERM` and `COLORTERM`, and `pbcopy` and
-  `open` are escape sequences the terminal interprets. Every one of them keeps working through ssh to a remote
+- **The terminal comes to the sandbox, not the reverse.** `sh` forwards `TERM`, `COLORTERM` and `TERM_PROGRAM`
+  (Claude Code enables Shift+Enter and the rest of its keyboard protocol only for a terminal it recognises), and
+  `pbcopy` and `open` are escape sequences the terminal interprets. Every one of them keeps working through ssh to a remote
   host, and none of them gives the container a channel to the machine you are sitting at.
 - **No interactive gates inside the box.** First-run trust and permission dialogs are pre-answered and the
   permission mode is `bypassPermissions`. A prompt an unattended agent cannot answer is a hang, and the container
