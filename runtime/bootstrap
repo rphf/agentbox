@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# /agentbox/bootstrap — run as `agent` by `agentbox up` from the read-only runtime mount, on every `up`. Idempotent.
+# Editing this file needs no image rebuild.
+# 1. clone the project into /workspace: from the host checkout when it is mounted, else from REPO_URL
+# 2. overlay /agent-home (your agent config, real files) onto $HOME
+# 3. hand over to the project's own bootstrap (agentbox-project-bootstrap) when the image has one
+set -euo pipefail
+cd /workspace
+
+if [ ! -d .git ]; then
+  if [ -d /host-repo/.git ]; then
+    echo "── cloning from host checkout"   # no GitHub access needed, and the object store is local
+    git clone --quiet /host-repo .
+    git remote set-url origin "$REPO_URL"
+  else
+    echo "── cloning $REPO_URL"
+    git clone --quiet "$REPO_URL" .
+  fi
+  git checkout --quiet "${REPO_BRANCH:-main}" 2>/dev/null || true
+fi
+
+# Home overlay: a directory in the overlay is merged into the same directory of the home (created when missing),
+# so per-agent state next to it survives; a file is linked in place, so it follows the overlay live and the agent
+# cannot alter it. Links left behind by files removed from the overlay are dropped first.
+overlay() {
+  local entry name target
+  for entry in "$1"/.[!.]* "$1"/..?* "$1"/*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    name="${entry##*/}"; target="$2/$name"
+    if [ -d "$entry" ] && [ ! -L "$entry" ]; then
+      [ -L "$target" ] && rm -f "$target"
+      mkdir -p "$target"
+      overlay "$entry" "$target"
+    else
+      ln -sfn "$entry" "$target"
+    fi
+  done
+}
+if [ -d /agent-home ] && [ -n "$(ls -A /agent-home)" ]; then
+  echo "── home overlay from /agent-home"
+  find "$HOME" -maxdepth 3 -type l -lname '/agent-home/*' ! -exec test -e {} \; -delete
+  overlay /agent-home "$HOME"
+fi
+
+mkdir -p "$HOME/out"
+
+python3 - <<'PY'
+import json, os, tempfile
+path = os.path.expanduser("~/.claude.json")
+try:
+    state = json.load(open(path))
+except Exception:
+    state = {}
+before = json.dumps(state, sort_keys=True)
+state.setdefault("hasCompletedOnboarding", True)
+state.setdefault("hasSeenAutoModeOutsideReadPrompt", True)
+state.setdefault("projects", {}).setdefault("/workspace", {})["hasTrustDialogAccepted"] = True
+if json.dumps(state, sort_keys=True) != before:
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path))
+    with os.fdopen(fd, "w") as fh:
+        json.dump(state, fh, indent=2)
+    os.replace(tmp, path)
+PY
+cat > "$HOME/AGENTBOX.md" <<EOF
+# This machine: an agentbox sandbox
+
+You are \`$(whoami)\` inside a throwaway container named \`${AGENT_NAME:-agentbox}\`, not on the human's machine.
+Nothing here is precious except what you hand back, and nothing you do here reaches their laptop.
+
+## Handing work and files back
+
+- Put anything the human should see in \`$HOME/out\`: screenshots, reports, logs, diffs, bundles.
+  They read it at **http://${AGENT_HOST}:${OUT_PORT:-<no out port>}/** from their browser and pull it with
+  \`agentbox get ${AGENT:-N}\`. Nothing else leaves this container.
+- Never write artifacts into the repository at /workspace. That is source, and a stray file shows up in
+  \`git status\` and ends up in someone's commit.
+- Name files so a list of them reads as a story: \`01-signin.png\`, \`02-dashboard-after-fix.png\`.
+- When you finish a piece of work, say where you put things and give the http URL, not just the path.
+
+## Git
+
+Commit in the container as usual. Pushing may fail because the bot token is not installed yet; when it does,
+hand the work over as a bundle instead and say so:
+
+\`\`\`bash
+git bundle create "\$HOME/out/\$(git branch --show-current).bundle" ${REPO_BRANCH:-main}..HEAD
+\`\`\`
+
+The human fetches that bundle and pushes it themselves.
+
+## What is around you
+
+- \`/workspace\` is your own clone. The human's checkout is mounted read-only at \`/host-repo\`; never write there.
+- \`$HOME\` persists across restarts of this sandbox. \`/workspace\` too.
+- Your hostname is \`${AGENT_HOST}\` and it resolves both here and in the human's browser, so a URL you see works
+  for them unchanged. Prefer it over \`localhost\` when you report a link.
+- Every hostname you resolve is logged. \`net-log hosts\` shows the list; it is a record, not a restriction.
+- You may install packages, run migrations, drop databases and force-push branches here. The container is the
+  blast radius, and it is cheap to rebuild.
+
+@/workspace/.agentbox/AGENT.md
+EOF
+
+if [ -n "${OUT_PORT:-}" ] && ! ss -ltnH "sport = :$OUT_PORT" 2>/dev/null | grep -q .; then
+  setsid python3 -m http.server "$OUT_PORT" --directory "$HOME/out" --bind 0.0.0.0 >/dev/null 2>&1 </dev/null &
+  disown 2>/dev/null || true
+fi
+
+if command -v agentbox-project-bootstrap >/dev/null; then
+  echo "── project bootstrap"
+  exec agentbox-project-bootstrap
+fi

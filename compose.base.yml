@@ -1,0 +1,35 @@
+# agentbox base: the agent service every project gets. The project adds its own services, networking, ports and
+# app env in <repo>/.agentbox/compose.yml; `agentbox` merges the two (docker compose -f base -f project).
+# Variables come from project.env, ~/.config/agentbox/env and the per-agent values agentbox exports.
+services:
+  agent:
+    image: agentbox-${PROJECT}
+    init: true
+    working_dir: /workspace
+    environment:
+      AGENT: ${AGENT}
+      AGENT_NAME: ${PROJECT}-agent-${AGENT}
+      AGENT_HOST: ${AGENT_HOST}                  # agentN.localhost, resolves to 127.0.0.1 inside and in browsers
+      OUT_PORT: ${OUT_PORT:-}                    # when the project publishes it, ~/out is served there
+      REPO_URL: ${REPO_URL:?set REPO_URL in .agentbox/project.env}
+      REPO_BRANCH: ${REPO_BRANCH:-main}
+      PLAYWRIGHT_BROWSERS_PATH: /opt/ms-playwright   # where image/install.sh put the browsers
+      EDITOR: vim
+      GIT_AUTHOR_NAME: ${BOT_NAME:-agent}
+      GIT_AUTHOR_EMAIL: ${BOT_EMAIL:-agent@localhost}
+      GIT_COMMITTER_NAME: ${BOT_NAME:-agent}
+      GIT_COMMITTER_EMAIL: ${BOT_EMAIL:-agent@localhost}
+    volumes:
+      - src:/workspace
+      - home:/home/agent
+      - ${GH_SECRETS_DIR}:/run/secrets:ro      # gh-token minted on the host; an empty dir when unset
+      - ${AGENT_HOME_DIR}:/agent-home:ro       # overlaid onto /home/agent by the bootstrap; empty dir when unset
+      - ${REPO_ROOT}:/host-repo:ro             # the checkout agentbox runs from; cloned into /workspace
+      - ${AGENTBOX_RUNTIME_DIR}:/agentbox:ro   # harness scripts run at `up` (bootstrap); edits need no rebuild
+    restart: unless-stopped
+
+volumes:
+  src:
+    name: ${PROJECT}-agent-${AGENT}-src
+  home:
+    name: ${PROJECT}-agent-${AGENT}-home

@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# net-log — record every hostname the agent container resolves, as an FYI log of the external hosts it reaches.
+# A local dnsmasq on 127.0.0.1:53 forwards to Docker's resolver, caches nothing, and logs each query to
+# /home/agent/network.log (per-agent home volume, so it persists). HTTPS hides URL paths, so hostnames are
+# the best available signal; connections made straight to an IP address are not captured.
+#   sudo net-log start | sudo net-log stop | net-log tail | net-log hosts
+# Toggle with NET_LOG=1|0 in ~/.config/agentbox/env (agentbox up starts it when on).
+set -euo pipefail
+LOG=/home/agent/network.log
+PIDFILE=/run/net-log.pid
+BACKUP=/run/resolv.conf.orig
+
+case "${1:-}" in
+  start)
+    [ "$(id -u)" = 0 ] || { echo "run as: sudo net-log start" >&2; exit 1; }
+    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then echo "net-log already running"; exit 0; fi
+    upstream=$(awk '/^nameserver/ && $2 != "127.0.0.1" {print $2; exit}' /etc/resolv.conf)
+    [ -n "$upstream" ] || upstream=127.0.0.11
+    [ -f "$BACKUP" ] || cp /etc/resolv.conf "$BACKUP"
+    touch "$LOG" && chown agent:agent "$LOG"
+    dnsmasq --listen-address=127.0.0.1 --bind-interfaces --port=53 --no-resolv --server="$upstream" \
+            --no-hosts --cache-size=0 --log-queries=extra --log-facility="$LOG" --user=agent --pid-file="$PIDFILE"
+    printf 'nameserver 127.0.0.1\n' > /etc/resolv.conf
+    echo "net-log: queries → $LOG (upstream $upstream). Read with: net-log hosts | net-log tail"
+    ;;
+  stop)
+    [ "$(id -u)" = 0 ] || { echo "run as: sudo net-log stop" >&2; exit 1; }
+    [ -f "$PIDFILE" ] && kill "$(cat "$PIDFILE")" 2>/dev/null && rm -f "$PIDFILE" && echo "net-log stopped" || echo "not running"
+    [ -f "$BACKUP" ] && cp "$BACKUP" /etc/resolv.conf
+    ;;
+  tail)
+    exec tail -f "$LOG"
+    ;;
+  hosts)
+    # unique hostnames with query counts, most frequent first
+    grep -oE 'query\[[A-Z]+\] [^ ]+' "$LOG" 2>/dev/null | awk '{print $2}' | sort | uniq -c | sort -rn
+    ;;
+  *)
+    sed -n '2,7p' "$0"; exit 1
+    ;;
+esac

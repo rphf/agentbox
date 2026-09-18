@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# gh shim: authenticate as the GitHub App bot with the token file agentbox mounts at /run/secrets/gh-token.
+# Sits first on PATH (/usr/local/bin) and hands off to the real /usr/bin/gh. Without the file, plain gh.
+if [ -z "${GH_TOKEN:-}" ] && [ -r /run/secrets/gh-token ]; then
+  GH_TOKEN="$(cat /run/secrets/gh-token)"
+  export GH_TOKEN
+fi
+exec /usr/bin/gh "$@"

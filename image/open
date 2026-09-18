@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# There is no browser in a sandbox. Print the target as an OSC 8 hyperlink instead, so the terminal on your own
+# machine makes it clickable and opens it there. Replaces Debian's /usr/bin/open (a console tool) on PATH.
+set -euo pipefail
+for target in "$@"; do
+  case "$target" in
+    http://*|https://*) url="$target" ;;
+    *) url="file://$(readlink -f "$target" 2>/dev/null || echo "$target")" ;;
+  esac
+  printf '\033]8;;%s\033\\%s\033]8;;\033\\\n' "$url" "$url"
+done

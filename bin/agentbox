@@ -1,0 +1,208 @@
+#!/usr/bin/env bash
+# agentbox — one Docker Compose sandbox per coding agent, for any project with an .agentbox/ folder.
+#
+#   agentbox init                   write ~/.config/agentbox/env from env.example
+#   agentbox build [docker args]    build the project image agentbox-<project> (e.g. --no-cache)
+#   agentbox setup [args]           run the project's own <repo>/.agentbox/setup, when it has one
+#   agentbox up N                   start agent N: compose up, hosts entry, net-log, bootstrap
+#   agentbox sh N                   shell into agent N
+#   agentbox down N                 stop agent N, keep its volumes
+#   agentbox destroy N              stop agent N and remove its volumes (<project>-agent-N-*)
+#   agentbox ps                     list this project's agents
+#   agentbox url N                  print this agent's URLs
+#   agentbox open N [PORT_NAME]     open one of them in your browser (default: the first port)
+#   agentbox get N [file]           copy agent N's ~/out to ./tmp/agentbox/agent-N/ on the host
+#   agentbox compose N [args]       run docker compose for agent N (logs db, config, exec agent ...)
+#
+# Run it from anywhere inside a project checkout, or pass -C <repo>. Settings come from
+# <repo>/.agentbox/project.env (project) and ~/.config/agentbox/env (personal); see README.md.
+# Volumes, databases and seeds are the project's business: its compose.yml declares them.
+set -euo pipefail
+
+HARNESS="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/agentbox"
+PERSONAL_ENV="$CONFIG_DIR/env"
+
+die() { echo "agentbox: $*" >&2; exit 1; }
+usage() { sed -n '2,19p' "$0"; exit 1; }
+
+# ── settings ──────────────────────────────────────────────────────────────────────────────────────────────
+find_repo() {   # walk up from $1 to the first directory holding .agentbox/project.env
+  local dir; dir="$(cd "$1" && pwd)"
+  while [ "$dir" != / ]; do
+    [ -f "$dir/.agentbox/project.env" ] && { echo "$dir"; return 0; }
+    dir="$(dirname "$dir")"
+  done
+  return 1
+}
+
+need_docker() { docker info >/dev/null 2>&1 || die "Docker is not running (or not reachable at ${DOCKER_HOST:-the default socket})"; }
+
+load_settings() {
+  need_docker
+  REPO_ROOT="$(find_repo "$START_DIR")" || die "no .agentbox/project.env found above $START_DIR (or use -C <repo>)"
+  PROJECT_DIR="$REPO_ROOT/.agentbox"
+  set -a
+  [ -f "$PERSONAL_ENV" ] && . "$PERSONAL_ENV"
+  . "$PROJECT_DIR/project.env"
+  set +a
+  [ -n "${PROJECT:-}" ] || die "PROJECT is not set in $PROJECT_DIR/project.env"
+  export REPO_ROOT AGENTBOX_RUNTIME_DIR="$HARNESS/runtime"
+  IMAGE="agentbox-$PROJECT"
+  # Secrets are per project: a directory named after it wins, and a single shared one is the fallback.
+  AGENT_HOME_DIR="$CONFIG_DIR/home"
+  GH_SECRETS_DIR="$CONFIG_DIR/secrets/$PROJECT"
+  [ -d "$GH_SECRETS_DIR" ] || GH_SECRETS_DIR="$CONFIG_DIR/secrets"
+  mkdir -p "$AGENT_HOME_DIR" "$GH_SECRETS_DIR"
+  # Resolved, because either may be a symlink into a dotfiles repo and Docker needs the real path to mount.
+  AGENT_HOME_DIR="$(cd "$AGENT_HOME_DIR" && pwd -P)"
+  GH_SECRETS_DIR="$(cd "$GH_SECRETS_DIR" && pwd -P)"
+  export AGENT_HOME_DIR GH_SECRETS_DIR
+}
+
+agent_env() {   # per-agent values, exported for compose interpolation
+  local n=$1 kv val
+  [[ "$n" =~ ^[0-9]+$ ]] || die "agent number expected, got '$n'"
+  export AGENT="$n" AGENT_HOST="agent${n}.localhost"
+  COMPOSE_PROJECT="$PROJECT-agent-$n"
+  PORTS_EXPANDED=""
+  for kv in ${PORTS:-}; do   # APP_PORT=3N00 → APP_PORT=3100 for agent 1
+    val="${kv#*=}"; val="${val//N/$n}"
+    export "${kv%%=*}=$val"
+    PORTS_EXPANDED+="${kv%%=*}=$val "
+  done
+}
+
+compose() {
+  local args=(-p "$COMPOSE_PROJECT" --project-directory "$PROJECT_DIR"
+              -f "$HARNESS/compose.base.yml" -f "$PROJECT_DIR/compose.yml")
+  [ -f "$PROJECT_DIR/.env" ] && args+=(--env-file "$PROJECT_DIR/.env")
+  docker compose "${args[@]}" "$@"
+}
+
+# ── commands ──────────────────────────────────────────────────────────────────────────────────────────────
+cmd_init() {
+  [ -f "$PERSONAL_ENV" ] && die "$PERSONAL_ENV already exists"
+  mkdir -p "$CONFIG_DIR"
+  cp "$HARNESS/env.example" "$PERSONAL_ENV"
+  echo "wrote $PERSONAL_ENV — edit it, then from a project checkout: agentbox build && agentbox up 1"
+}
+
+cmd_build() {
+  load_settings
+  # The project Dockerfile pulls the generic layer from the named build context (RUN --mount=...,from=agentbox).
+  docker build -t "$IMAGE" --build-context "agentbox=$HARNESS/image" "$@" "$PROJECT_DIR"
+}
+
+cmd_up() {
+  local n=${1:?usage: agentbox up N}
+  load_settings; agent_env "$n"
+  docker image inspect "$IMAGE" >/dev/null 2>&1 || die "image $IMAGE missing — run: agentbox build"
+  compose up -d --wait
+  # The agent's hostname must resolve inside the container too (extra_hosts is refused with network_mode).
+  compose exec -T --user root agent sh -c "grep -q ' $AGENT_HOST\$' /etc/hosts || echo '127.0.0.1 $AGENT_HOST' >> /etc/hosts"
+  # Hostname log, before the bootstrap so its downloads are logged too.
+  if [ "${NET_LOG:-1}" = 1 ]; then compose exec -T agent sudo /usr/local/bin/net-log start; fi
+  compose exec -T agent /agentbox/bootstrap
+  remove_completed_containers
+  echo
+  echo "$COMPOSE_PROJECT is up.  shell: agentbox sh $n   host: $AGENT_HOST   ${PORTS_EXPANDED:-}"
+}
+
+remove_completed_containers() {
+  local ids
+  ids="$(docker ps -aq --filter "label=com.docker.compose.project=$COMPOSE_PROJECT" --filter "exited=0")"
+  [ -n "$ids" ] && docker rm $ids >/dev/null
+  return 0
+}
+
+cmd_sh() {
+  load_settings; agent_env "${1:?usage: agentbox sh N}"
+  compose exec -e TERM="${TERM:-xterm-256color}" -e COLORTERM="${COLORTERM:-truecolor}" \
+    agent "${AGENT_SHELL:-bash}"
+}
+cmd_down() { load_settings; agent_env "${1:?usage: agentbox down N}"; compose down; }
+
+cmd_destroy() {
+  local n=${1:?usage: agentbox destroy N} vols
+  load_settings; agent_env "$n"
+  compose down
+  # Only this agent's volumes, by the naming convention; shared and golden volumes are external and never touched.
+  vols="$(docker volume ls -q | grep "^$COMPOSE_PROJECT-" || true)"
+  [ -n "$vols" ] && docker volume rm $vols >/dev/null
+  echo "$COMPOSE_PROJECT removed${vols:+ (volumes: $(echo $vols | tr '\n' ' '))}"
+}
+
+cmd_ps() {
+  load_settings
+  docker ps -a --filter "label=com.docker.compose.project" \
+    --format 'table {{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.service"}}\t{{.Status}}\t{{.Ports}}' \
+    | awk -v p="^$PROJECT-agent-" 'NR==1 || $1 ~ p'
+}
+
+cmd_compose() { load_settings; agent_env "${1:?usage: agentbox compose N [args]}"; shift; compose "$@"; }
+
+cmd_setup() {
+  load_settings
+  [ -x "$PROJECT_DIR/setup" ] || die "this project has no .agentbox/setup"
+  "$PROJECT_DIR/setup" "$@"
+}
+
+cmd_url() {
+  local n=${1:?usage: agentbox url N} kv
+  load_settings; agent_env "$n"
+  for kv in $PORTS_EXPANDED; do printf '%-16s http://%s:%s\n' "${kv%%=*}" "$AGENT_HOST" "${kv#*=}"; done
+}
+
+cmd_open() {
+  local n=${1:?usage: agentbox open N [PORT_NAME]} want=${2:-} kv port="" url
+  load_settings; agent_env "$n"
+  for kv in $PORTS_EXPANDED; do
+    if [ -z "$want" ] || [ "${kv%%=*}" = "$want" ]; then port="${kv#*=}"; break; fi
+  done
+  [ -n "$port" ] || die "no port called '$want' in PORTS (have: $(echo $PORTS_EXPANDED | sed 's/=[0-9]*//g'))"
+  url="http://$AGENT_HOST:$port"
+  echo "$url"
+  if command -v open >/dev/null; then open "$url"
+  elif command -v xdg-open >/dev/null; then xdg-open "$url"
+  else echo "no browser opener on this machine; open the URL yourself" >&2
+  fi
+}
+
+cmd_get() {
+  local n=${1:?usage: agentbox get N [file]} file=${2:-.} dest container
+  load_settings; agent_env "$n"
+  container="$(compose ps -q agent)"
+  [ -n "$container" ] || die "agent $n is not running"
+  dest="$REPO_ROOT/tmp/agentbox/agent-$n"
+  mkdir -p "$dest"
+  docker cp "$container:/home/agent/out/$file" "$dest/" || die "nothing at ~/out/$file in agent $n"
+  echo "$dest"
+  ls -la "$dest"
+}
+
+# ── main ──────────────────────────────────────────────────────────────────────────────────────────────────
+START_DIR="$PWD"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -C) START_DIR="${2:?-C needs a directory}"; shift 2 ;;
+    -h|--help) usage ;;
+    *) break ;;
+  esac
+done
+cmd=${1:-}; shift || true
+case "$cmd" in
+  init) cmd_init "$@" ;;
+  build) cmd_build "$@" ;;
+  setup) cmd_setup "$@" ;;
+  up) cmd_up "$@" ;;
+  sh) cmd_sh "$@" ;;
+  down) cmd_down "$@" ;;
+  destroy) cmd_destroy "$@" ;;
+  ps) cmd_ps ;;
+  compose) cmd_compose "$@" ;;
+  get) cmd_get "$@" ;;
+  url) cmd_url "$@" ;;
+  open) cmd_open "$@" ;;
+  *) usage ;;
+esac

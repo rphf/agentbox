@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Copy stdin to the clipboard of whatever machine your terminal runs on, using OSC 52.
+# The escape sequence travels back through docker exec and ssh, so this works from inside a sandbox on a
+# remote host too. Terminals that do not implement OSC 52 simply ignore it.
+set -euo pipefail
+payload="$(base64 | tr -d '\n')"
+printf '\033]52;c;%s\a' "$payload" > /dev/tty
+echo "copied to your clipboard ($(echo -n "$payload" | wc -c) bytes encoded)" >&2
