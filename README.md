@@ -38,6 +38,7 @@ agentbox ps                     list this project's agents
 agentbox url N                  print this agent's URLs
 agentbox open N [PORT_NAME]     open one in your browser
 agentbox get N [file]           copy agent N's outbox to ./tmp/agentbox/agent-N/
+agentbox review N [args]        open agent N's code review (revue) in your browser; args go to `revue url`
 agentbox compose N [args]       docker compose for agent N: `compose 1 logs db`, `compose 1 config`
 ```
 
@@ -74,8 +75,9 @@ PORTS="APP_PORT=3N00 DEV_PORT=3N36 DB_PORT=3N32 OUT_PORT=3N90"
 ```
 
 Each entry in `PORTS` becomes a variable for compose interpolation with `N` replaced by the agent number, so
-agent 2 gets `APP_PORT=3200`. `OUT_PORT` is the one name the harness recognises: publish it and the agent's
-outbox is served there.
+agent 2 gets `APP_PORT=3200`. Two names are recognised by the harness. `OUT_PORT`: publish it and the agent's
+outbox is served there. `REVUE_PORT`: publish it and the agent's revue code-review server binds it, with
+`http://agentN.localhost:<port>` as the URL your browser uses; `agentbox review N` opens it.
 
 ### `Dockerfile`
 
@@ -93,7 +95,7 @@ CMD ["sleep", "infinity"]
 ```
 
 `install.sh` adds user `agent` (uid 1000), Claude Code, Playwright MCP with Chromium and WebKit, `gh`, zsh, tmux,
-lazygit, delta, dnsmasq, socat, the `net-log`, `gh`, `pbcopy` and `open` shims, and the git credential helper for
+lazygit, delta, revue (latest release), dnsmasq, socat, the `net-log`, `gh`, `pbcopy` and `open` shims, and the git credential helper for
 `/run/secrets/gh-token`. Any directory the project mounts a volume on must exist in the image and belong to
 `agent`: Docker copies a mount point's ownership into an empty volume on first mount, which is all the ownership
 handling there is.
@@ -167,6 +169,9 @@ to one repo.
 - `~/AGENTBOX.md`, written per agent, saying where it is and how to hand work back, importing the project's
   `AGENT.md`
 - `~/out`, its outbox, served at `http://agentN.localhost:<OUT_PORT>/` and pulled with `agentbox get`
+- `revue`, when the project publishes `REVUE_PORT`: the agent opens a review of its diff and hands you the link,
+  you comment at `http://agentN.localhost:<REVUE_PORT>/`, and it reads your feedback with the CLI. The protocol is
+  in `~/AGENTBOX.md`; `agentbox review N` opens the current review from here
 - Claude Code with your config, no permission prompts, the workspace pre-trusted
 - `pbcopy` and `open`, which reach your clipboard and your browser through terminal escape sequences, over ssh too
 - `net-log hosts`, every hostname it reached

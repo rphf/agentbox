@@ -11,6 +11,10 @@ services:
       AGENT_NAME: ${PROJECT}-agent-${AGENT}
       AGENT_HOST: ${AGENT_HOST}                  # agentN.localhost, resolves to 127.0.0.1 inside and in browsers
       OUT_PORT: ${OUT_PORT:-}                    # when the project publishes it, ~/out is served there
+      REVUE_PORT: ${REVUE_PORT:-}                # when the project publishes it, the agent's code reviews live there
+      REVUE_PUBLIC_URL: ${REVUE_PUBLIC_URL:-}    # http://agentN.localhost:<REVUE_PORT>, derived by agentbox
+      REVUE_BIND: 0.0.0.0                        # reachable through the published port; token and origin check still apply
+      REVUE_IDLE_TIMEOUT: "0"                    # the container is the lifetime, no idle shutdown
       REPO_URL: ${REPO_URL:?set REPO_URL in .agentbox/project.env}
       REPO_BRANCH: ${REPO_BRANCH:-main}
       PLAYWRIGHT_BROWSERS_PATH: /opt/ms-playwright   # where image/install.sh put the browsers

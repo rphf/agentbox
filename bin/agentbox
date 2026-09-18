@@ -12,6 +12,7 @@
 #   agentbox url N                  print this agent's URLs
 #   agentbox open N [PORT_NAME]     open one of them in your browser (default: the first port)
 #   agentbox get N [file]           copy agent N's ~/out to ./tmp/agentbox/agent-N/ on the host
+#   agentbox review N [args]        open agent N's code review (revue) in your browser; args go to `revue url`
 #   agentbox compose N [args]       run docker compose for agent N (logs db, config, exec agent ...)
 #
 # Run it from anywhere inside a project checkout, or pass -C <repo>. Settings come from
@@ -24,7 +25,7 @@ CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/agentbox"
 PERSONAL_ENV="$CONFIG_DIR/env"
 
 die() { echo "agentbox: $*" >&2; exit 1; }
-usage() { sed -n '2,19p' "$0"; exit 1; }
+usage() { sed -n '2,20p' "$0"; exit 1; }
 
 # ── settings ──────────────────────────────────────────────────────────────────────────────────────────────
 find_repo() {   # walk up from $1 to the first directory holding .agentbox/project.env
@@ -71,6 +72,15 @@ agent_env() {   # per-agent values, exported for compose interpolation
     export "${kv%%=*}=$val"
     PORTS_EXPANDED+="${kv%%=*}=$val "
   done
+  # revue inside the agent prints links and checks origins against the URL the human's browser uses.
+  if [ -n "${REVUE_PORT:-}" ]; then export REVUE_PUBLIC_URL="http://$AGENT_HOST:$REVUE_PORT"; fi
+}
+
+browse() {   # open a URL in the browser of this machine
+  if command -v open >/dev/null; then open "$1"
+  elif command -v xdg-open >/dev/null; then xdg-open "$1"
+  else echo "no browser opener on this machine; open the URL yourself" >&2
+  fi
 }
 
 compose() {
@@ -163,10 +173,17 @@ cmd_open() {
   [ -n "$port" ] || die "no port called '$want' in PORTS (have: $(echo $PORTS_EXPANDED | sed 's/=[0-9]*//g'))"
   url="http://$AGENT_HOST:$port"
   echo "$url"
-  if command -v open >/dev/null; then open "$url"
-  elif command -v xdg-open >/dev/null; then xdg-open "$url"
-  else echo "no browser opener on this machine; open the URL yourself" >&2
-  fi
+  browse "$url"
+}
+
+cmd_review() {
+  local n=${1:?usage: agentbox review N [--review ID]} url
+  load_settings; agent_env "$n"; shift
+  [ -n "${REVUE_PORT:-}" ] || die "this project publishes no REVUE_PORT in PORTS"
+  # `revue url` in the box mints a fresh link and restarts the review server when it went idle.
+  url="$(compose exec -T agent revue url "$@")" || die "revue url failed in agent $n (running? agentbox up $n)"
+  echo "$url"
+  browse "$url"
 }
 
 cmd_get() {
@@ -204,5 +221,6 @@ case "$cmd" in
   get) cmd_get "$@" ;;
   url) cmd_url "$@" ;;
   open) cmd_open "$@" ;;
+  review) cmd_review "$@" ;;
   *) usage ;;
 esac

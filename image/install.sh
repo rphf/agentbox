@@ -2,7 +2,7 @@
 # agentbox generic image layer. A project Dockerfile runs it as root, on a Debian bookworm based image:
 #   RUN --mount=type=bind,from=agentbox,target=/agentbox /agentbox/install.sh
 # It installs: user `agent` (uid 1000) with /workspace, Node (only when the image has none), Claude Code,
-# Playwright MCP with Chromium and WebKit under /opt/ms-playwright, gh, lazygit, delta, tmux, dnsmasq, socat,
+# Playwright MCP with Chromium and WebKit under /opt/ms-playwright, gh, lazygit, delta, revue, tmux, dnsmasq, socat,
 # the net-log and gh scripts, git and sudo settings for the bot identity. The harness bootstrap is not baked in:
 # compose mounts <harness>/runtime at /agentbox and `agentbox up` runs it from there.
 # Build ARGs it honours when declared before the RUN line: PLAYWRIGHT_MCP_VERSION (default latest), NODE_VERSION.
@@ -37,6 +37,9 @@ curl -fsSL "https://github.com/dandavison/delta/releases/download/${DELTA_VERSIO
   | tar -xz -C /tmp
 install -m 755 "/tmp/delta-${DELTA_VERSION}-${delta_arch}/delta" /usr/local/bin/delta
 rm -rf "/tmp/delta-${DELTA_VERSION}-${delta_arch}"
+# revue: the human reviews agent diffs in it, the agent reads the feedback with its CLI. Always the latest release.
+curl -fsSL "https://github.com/rphf/revue/releases/latest/download/revue_linux_${arch}.tar.gz" \
+  | tar -xz -C /usr/local/bin revue
 
 if ! command -v node >/dev/null; then
   arch="$(dpkg --print-architecture)"
