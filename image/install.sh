@@ -5,10 +5,12 @@
 # Playwright MCP with Chromium and WebKit under /opt/ms-playwright, gh, lazygit, delta, revue, tmux, dnsmasq, socat,
 # the net-log and gh scripts, git and sudo settings for the bot identity. The harness bootstrap is not baked in:
 # compose mounts <harness>/runtime at /agentbox and `agentbox up` runs it from there.
-# Build ARGs it honours when declared before the RUN line: PLAYWRIGHT_MCP_VERSION (default latest), NODE_VERSION.
+# Build ARGs it honours when declared before the RUN line: PLAYWRIGHT_MCP_VERSION (default latest), NODE_VERSION,
+# REVUE_VERSION (default latest; a pin also rebuilds this layer, which is how a newer latest gets picked up).
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 : "${PLAYWRIGHT_MCP_VERSION:=latest}"
+: "${REVUE_VERSION:=latest}"
 : "${NODE_VERSION:=24.15.0}"
 : "${LAZYGIT_VERSION:=0.65.1}"
 : "${DELTA_VERSION:=0.19.2}"
@@ -37,9 +39,12 @@ curl -fsSL "https://github.com/dandavison/delta/releases/download/${DELTA_VERSIO
   | tar -xz -C /tmp
 install -m 755 "/tmp/delta-${DELTA_VERSION}-${delta_arch}/delta" /usr/local/bin/delta
 rm -rf "/tmp/delta-${DELTA_VERSION}-${delta_arch}"
-# revue: the human reviews agent diffs in it, the agent reads the feedback with its CLI. Always the latest release.
-curl -fsSL "https://github.com/rphf/revue/releases/latest/download/revue_linux_${arch}.tar.gz" \
-  | tar -xz -C /usr/local/bin revue
+# revue: the human reviews agent diffs in it, the agent reads the feedback with its CLI.
+case "$REVUE_VERSION" in
+  latest) revue_url="https://github.com/rphf/revue/releases/latest/download/revue_linux_${arch}.tar.gz" ;;
+  *)      revue_url="https://github.com/rphf/revue/releases/download/v${REVUE_VERSION}/revue_linux_${arch}.tar.gz" ;;
+esac
+curl -fsSL "$revue_url" | tar -xz -C /usr/local/bin revue
 
 if ! command -v node >/dev/null; then
   arch="$(dpkg --print-architecture)"

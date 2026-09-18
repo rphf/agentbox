@@ -38,7 +38,8 @@ agentbox ps                     list this project's agents
 agentbox url N                  print this agent's URLs
 agentbox open N [PORT_NAME]     open one in your browser
 agentbox get N [file]           copy agent N's outbox to ./tmp/agentbox/agent-N/
-agentbox review N [args]        open agent N's code review (revue) in your browser; args go to `revue url`
+agentbox review N [diff args]   review agent N's uncommitted changes in your browser (revue open --reuse)
+agentbox reviews N [ID]         list agent N's reviews, or open review ID in your browser
 agentbox compose N [args]       docker compose for agent N: `compose 1 logs db`, `compose 1 config`
 ```
 
@@ -77,7 +78,8 @@ PORTS="APP_PORT=3N00 DEV_PORT=3N36 DB_PORT=3N32 OUT_PORT=3N90"
 Each entry in `PORTS` becomes a variable for compose interpolation with `N` replaced by the agent number, so
 agent 2 gets `APP_PORT=3200`. Two names are recognised by the harness. `OUT_PORT`: publish it and the agent's
 outbox is served there. `REVUE_PORT`: publish it and the agent's revue code-review server binds it, with
-`http://agentN.localhost:<port>` as the URL your browser uses; `agentbox review N` opens it.
+`http://agentN.localhost:<port>` as the URL your browser uses. `agentbox review N` reviews the box's uncommitted
+changes there, idempotently; `agentbox reviews N` lists what the agent opened.
 
 ### `Dockerfile`
 
@@ -171,7 +173,8 @@ to one repo.
 - `~/out`, its outbox, served at `http://agentN.localhost:<OUT_PORT>/` and pulled with `agentbox get`
 - `revue`, when the project publishes `REVUE_PORT`: the agent opens a review of its diff and hands you the link,
   you comment at `http://agentN.localhost:<REVUE_PORT>/`, and it reads your feedback with the CLI. The protocol is
-  in `~/AGENTBOX.md`; `agentbox review N` opens the current review from here
+  in `~/AGENTBOX.md`. From here, `agentbox review N` reviews the box's uncommitted changes and `agentbox reviews N`
+  lists or opens existing reviews
 - Claude Code with your config, no permission prompts, the workspace pre-trusted
 - `pbcopy` and `open`, which reach your clipboard and your browser through terminal escape sequences, over ssh too
 - `net-log hosts`, every hostname it reached

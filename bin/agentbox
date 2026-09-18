@@ -12,7 +12,8 @@
 #   agentbox url N                  print this agent's URLs
 #   agentbox open N [PORT_NAME]     open one of them in your browser (default: the first port)
 #   agentbox get N [file]           copy agent N's ~/out to ./tmp/agentbox/agent-N/ on the host
-#   agentbox review N [args]        open agent N's code review (revue) in your browser; args go to `revue url`
+#   agentbox review N [diff args]   review agent N's uncommitted changes in your browser (revue open --reuse)
+#   agentbox reviews N [ID]         list agent N's reviews, or open review ID in your browser
 #   agentbox compose N [args]       run docker compose for agent N (logs db, config, exec agent ...)
 #
 # Run it from anywhere inside a project checkout, or pass -C <repo>. Settings come from
@@ -25,7 +26,7 @@ CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/agentbox"
 PERSONAL_ENV="$CONFIG_DIR/env"
 
 die() { echo "agentbox: $*" >&2; exit 1; }
-usage() { sed -n '2,20p' "$0"; exit 1; }
+usage() { sed -n '2,21p' "$0"; exit 1; }
 
 # ── settings ──────────────────────────────────────────────────────────────────────────────────────────────
 find_repo() {   # walk up from $1 to the first directory holding .agentbox/project.env
@@ -177,13 +178,44 @@ cmd_open() {
 }
 
 cmd_review() {
-  local n=${1:?usage: agentbox review N [--review ID]} url
+  local n=${1:?usage: agentbox review N [git-diff args]} out url
   load_settings; agent_env "$n"; shift
   [ -n "${REVUE_PORT:-}" ] || die "this project publishes no REVUE_PORT in PORTS"
-  # `revue url` in the box mints a fresh link and restarts the review server when it went idle.
-  url="$(compose exec -T agent revue url "$@")" || die "revue url failed in agent $n (running? agentbox up $n)"
+  # No args means the working tree. Idempotent: --reuse adds a round to the existing review for the same
+  # diff instead of opening another one, and revue skips the round when the diff is unchanged.
+  if ! out="$(compose exec -T agent revue open --no-browser --reuse "$@" 2>&1)"; then
+    case "$out" in
+      *empty_diff*) die "agent $n has no uncommitted changes; pass git-diff arguments, or list reviews: agentbox reviews $n" ;;
+      *) die "revue open failed in agent $n: $out" ;;
+    esac
+  fi
+  url="$(printf '%s\n' "$out" | sed -n 's/^ *"url": *"\(.*\)",\{0,1\}$/\1/p' | head -1)"
+  [ -n "$url" ] || die "no url in revue output: $out"
   echo "$url"
   browse "$url"
+}
+
+cmd_reviews() {
+  local n=${1:?usage: agentbox reviews N [ID]} id=${2:-} url
+  load_settings; agent_env "$n"
+  [ -n "${REVUE_PORT:-}" ] || die "this project publishes no REVUE_PORT in PORTS"
+  if [ -n "$id" ]; then
+    # `revue url` mints a fresh link and restarts the review server when it went idle.
+    url="$(compose exec -T agent revue url --review "$id")" || die "revue url failed in agent $n (running? agentbox up $n)"
+    echo "$url"
+    browse "$url"
+    return 0
+  fi
+  # Formatted inside the box, where python3 is guaranteed.
+  compose exec -T agent python3 - <<'PY'
+import json, subprocess
+out = subprocess.run(["revue", "reviews"], capture_output=True, text=True, check=True).stdout
+rows = json.loads(out)["reviews"]
+print(f"{'ID':>3}  {'STATE':<9} {'BRANCH':<24} {'UPDATED':<20} DIFF")
+for r in rows:
+    diff = " ".join(r["sourceArgs"]) or "working tree"
+    print(f"{r['id']:>3}  {r['state']:<9} {r['branch'][:24]:<24} {r['updatedAt'][:19]:<20} {diff}")
+PY
 }
 
 cmd_get() {
@@ -222,5 +254,6 @@ case "$cmd" in
   url) cmd_url "$@" ;;
   open) cmd_open "$@" ;;
   review) cmd_review "$@" ;;
+  reviews) cmd_reviews "$@" ;;
   *) usage ;;
 esac
