@@ -37,9 +37,9 @@ agentbox destroy N              stop and remove every volume named <project>-age
 agentbox ps                     list this project's agents
 agentbox url N                  print this agent's URLs
 agentbox open N [PORT_NAME]     open one in your browser
+agentbox panel N                open agent N's control panel: app start/stop, review server, outbox
 agentbox get N [file]           copy agent N's outbox to ./tmp/agentbox/agent-N/
-agentbox review N [diff args]   review agent N's uncommitted changes in your browser (revue open --reuse)
-agentbox reviews N [ID]         list agent N's reviews, or open review ID in your browser
+agentbox review N [diff args]   open agent N's live diff in your browser (default: its uncommitted changes)
 agentbox compose N [args]       docker compose for agent N: `compose 1 logs db`, `compose 1 config`
 ```
 
@@ -78,8 +78,8 @@ PORTS="APP_PORT=3N00 DEV_PORT=3N36 DB_PORT=3N32 OUT_PORT=3N90"
 Each entry in `PORTS` becomes a variable for compose interpolation with `N` replaced by the agent number, so
 agent 2 gets `APP_PORT=3200`. Two names are recognised by the harness. `OUT_PORT`: publish it and the agent's
 outbox is served there. `REVUE_PORT`: publish it and the agent's revue code-review server binds it, with
-`http://agentN.localhost:<port>` as the URL your browser uses. `agentbox review N` reviews the box's uncommitted
-changes there, idempotently; `agentbox reviews N` lists what the agent opened.
+`http://agentN.localhost:<port>` as the URL your browser uses. `agentbox review N` opens the box's working tree
+there, and the page follows it as the agent works; `agentbox panel N` starts and stops that server.
 
 ### `Dockerfile`
 
@@ -170,11 +170,13 @@ to one repo.
 - hostname `agentN.localhost` and the ports from `PORTS`, identical inside and outside
 - `~/AGENTBOX.md`, written per agent, saying where it is and how to hand work back, importing the project's
   `AGENT.md`
-- `~/out`, its outbox, served at `http://agentN.localhost:<OUT_PORT>/` and pulled with `agentbox get`
-- `revue`, when the project publishes `REVUE_PORT`: the agent opens a review of its diff and hands you the link,
-  you comment at `http://agentN.localhost:<REVUE_PORT>/`, and it reads your feedback with the CLI. The protocol is
-  in `~/AGENTBOX.md`. From here, `agentbox review N` reviews the box's uncommitted changes and `agentbox reviews N`
-  lists or opens existing reviews
+- `~/out`, its outbox, served at `http://agentN.localhost:<OUT_PORT>/<file>` and pulled with `agentbox get`. The same
+  port serves you the control panel at `/` (`agentbox panel N`): the app with start and stop, the review server,
+  the outbox
+- `revue`, when the project publishes `REVUE_PORT`: you review its diff at `http://agentN.localhost:<REVUE_PORT>/`,
+  live, as the agent changes files; you send comments, it reads them with the CLI and replies in threads. The
+  protocol is in `~/AGENTBOX.md`. From here, `agentbox review N` opens that page and the panel starts or stops
+  the server
 - Claude Code with your config, no permission prompts, the workspace pre-trusted
 - `pbcopy` and `open`, which reach your clipboard and your browser through terminal escape sequences, over ssh too
 - `net-log hosts`, every hostname it reached

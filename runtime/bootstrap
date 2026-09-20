@@ -66,19 +66,20 @@ if [ -n "${REVUE_PORT:-}" ]; then
   review_section="$(cat <<REVIEW
 ## Getting your work reviewed
 
-The human reviews your diffs in their browser with revue; you talk to it with the \`revue\` CLI from /workspace.
+The human reviews your changes in their browser with revue. The page follows /workspace live, so they see
+your edits as you save them; you talk to revue with the \`revue\` CLI from /workspace.
 
 1. Work on a branch and commit. Put screenshots and reports in \`$HOME/out\` (see above).
-2. Run \`revue open --no-browser --reuse ${REPO_BRANCH:-main}...HEAD\`. Put the \`url\` from its output in your
-   final message and end your turn. Keep the \`cursor\` value. Nothing happens until the human has reviewed.
-3. When the human resumes you, run \`revue feedback --since <cursor>\`. It holds the verdict and every comment
-   with the quoted lines. \`approve\` means done, \`request_changes\` means implement, \`comment\` means answer.
-4. Answer a comment with \`revue reply --thread <id> -m "..."\`. Link evidence in \`$HOME/out\` by its http URL;
-   it renders inline in the review.
-5. After code changes, commit and run the same \`revue open\` command again: it adds a round to the same review.
-   Then end your turn again with the same url.
+2. When a piece of work is ready, run \`revue open --no-browser ${REPO_BRANCH:-main}...HEAD\` and put the
+   printed link in your final message. Then end your turn; nothing happens until the human has looked.
+3. When the human resumes you, run \`revue feedback\`. It holds every unresolved thread with the quoted
+   lines, and the note of the human's last send: it says whether to answer, to change something, or that
+   you are done. Keep the \`cursor\`; \`revue feedback --since <cursor>\` later shows only what is new.
+4. Answer a comment with \`revue reply --thread <id> -m "..."\`. Link evidence in \`$HOME/out\` by its http
+   URL; it renders inline.
+5. After code changes, commit. The human's page updates by itself; end your turn again with the same link.
 
-Never resolve threads or approve anything yourself; only the human does. \`revue --help\` lists the rest.
+Never resolve threads yourself; only the human does. \`revue --help\` lists the rest.
 
 REVIEW
 )"$'\n'

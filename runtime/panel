@@ -2,13 +2,16 @@
 # agentbox panel — the per-agent control page, served on OUT_PORT (the outbox port). It replaces the plain
 # static file server the bootstrap used to run: GET / is the panel, GET /<name> still serves ~/out files (so the
 # URLs the agent hands back keep working), /_out/ lists them, and /api/* reports status and starts/stops the app
-# and revue. Runs as `agent` from the bootstrap; stdlib only (python3 is guaranteed in the image). It lives on
-# the runtime mount at /agentbox, so edits need no image rebuild.
+# and the revue server. Runs as `agent` from the bootstrap; stdlib only (python3 is guaranteed in the image). It
+# lives on the runtime mount at /agentbox, so edits need no image rebuild.
+import glob
 import json
 import mimetypes
 import os
 import shutil
+import signal
 import subprocess
+import time
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -23,6 +26,9 @@ AGENT_NAME = os.environ.get("AGENT_NAME", "agentbox")
 AGENT_NUM = os.environ.get("AGENT", "")
 REVUE_PORT = os.environ.get("REVUE_PORT", "")
 REVUE_URL = os.environ.get("REVUE_PUBLIC_URL") or (f"http://{AGENT_HOST}:{REVUE_PORT}" if REVUE_PORT else "")
+# revue records its server's port, token and pid here (docs/configuration.md in the revue repo); stopping
+# the server is a signal to that pid, since revue has no stop command of its own.
+REVUE_STATE = str(HOME / ".local" / "state" / "revue" / "*" / "state.json")
 PANEL_HTML = Path(__file__).resolve().parent / "panel.html"
 WORKDIR = "/workspace"
 
@@ -62,9 +68,10 @@ def app_status():
 
 
 def revue_status():
-    if not REVUE_URL:
+    if not REVUE_URL or not have("revue"):
         return {"available": False}
-    return {"available": True, "url": REVUE_URL, "up": probe(REVUE_URL)}
+    _, out, _ = run(["revue", "version"], timeout=10)
+    return {"available": True, "url": REVUE_URL, "up": probe(REVUE_URL), "version": out.strip()}
 
 
 def out_count():
@@ -93,18 +100,45 @@ def safe_out_path(path):
     return None
 
 
-def revue_open():
-    rc, out, err = run(["revue", "open", "--no-browser", "--reuse"], timeout=60)
-    blob = out + err
-    if "empty_diff" in blob:
-        return {"ok": False, "error": "no uncommitted changes to review"}
-    url = ""
-    for line in out.splitlines():
-        s = line.strip()
-        if s.startswith('"url"'):
-            url = s.split(":", 1)[1].strip().rstrip(",").strip('"')
-            break
-    return {"ok": rc == 0 and bool(url), "url": url, "output": blob.strip()[:500]}
+def revue_link(args):
+    # `revue open --no-browser` starts the server when it is down, checks the arguments and prints a one-time
+    # login link to the diff; no arguments means the box's uncommitted changes.
+    rc, out, err = run(["revue", "open", "--no-browser", *args], timeout=60)
+    url = next((ln.strip() for ln in out.splitlines() if ln.strip().startswith("http")), "")
+    if rc != 0 or not url:
+        return {"ok": False, "error": (err or out).strip()[:500] or "revue open failed"}
+    return {"ok": True, "url": url}
+
+
+def revue_pids():
+    pids = []
+    for path in glob.glob(REVUE_STATE):
+        try:
+            pid = int(json.load(open(path)).get("pid") or 0)
+        except Exception:
+            continue
+        if pid > 0:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                continue
+            except PermissionError:
+                pass
+            pids.append(pid)
+    return pids
+
+
+def revue_stop():
+    pids = revue_pids()
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    deadline = time.time() + 5
+    while time.time() < deadline and probe(REVUE_URL, timeout=1):
+        time.sleep(0.2)
+    return {"ok": not probe(REVUE_URL, timeout=1), "stopped": len(pids)}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -166,6 +200,13 @@ class Handler(BaseHTTPRequestHandler):
         ctype = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
         self._send(200, target.read_bytes(), ctype)
 
+    def _json_body(self):
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            return json.loads(self.rfile.read(length) or b"{}") if length else {}
+        except Exception:
+            return {}
+
     def do_HEAD(self):
         self.do_GET()
 
@@ -194,10 +235,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, {"ok": False, "error": "this box has no app command"})
             rc, out, err = run(["app", "stop"], timeout=30)
             return self._send(200, {"ok": rc == 0, "output": (out + err).strip()})
-        if p == "/api/revue/open":
+        if p in ("/api/revue/open", "/api/revue/start"):
             if not have("revue"):
                 return self._send(400, {"ok": False, "error": "this box has no revue command"})
-            return self._send(200, revue_open())
+            args = self._json_body().get("args") or []
+            if not isinstance(args, list) or not all(isinstance(a, str) for a in args):
+                return self._send(400, {"ok": False, "error": "args must be a list of strings"})
+            return self._send(200, revue_link(args))
+        if p == "/api/revue/stop":
+            if not have("revue"):
+                return self._send(400, {"ok": False, "error": "this box has no revue command"})
+            return self._send(200, revue_stop())
         return self._send(404, {"ok": False, "error": "not found"})
 
 
