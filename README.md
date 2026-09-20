@@ -1,3 +1,5 @@
+<img src="runtime/logo.svg" alt="" width="56" height="56">
+
 # agentbox
 
 One Docker Compose sandbox per coding agent, for any project.

@@ -30,6 +30,7 @@ REVUE_URL = os.environ.get("REVUE_PUBLIC_URL") or (f"http://{AGENT_HOST}:{REVUE_
 # the server is a signal to that pid, since revue has no stop command of its own.
 REVUE_STATE = str(HOME / ".local" / "state" / "revue" / "*" / "state.json")
 PANEL_HTML = Path(__file__).resolve().parent / "panel.html"
+LOGO_SVG = Path(__file__).resolve().parent / "logo.svg"
 WORKDIR = "/workspace"
 
 
@@ -74,11 +75,18 @@ def revue_status():
     return {"available": True, "url": REVUE_URL, "up": probe(REVUE_URL), "version": out.strip()}
 
 
-def out_count():
+def out_files(limit=100):
+    # Newest first, so the file the agent just handed back is on top.
+    files = []
     try:
-        return sum(1 for p in OUT_DIR.rglob("*") if p.is_file())
+        for path in OUT_DIR.rglob("*"):
+            if path.is_file():
+                st = path.stat()
+                files.append({"name": path.relative_to(OUT_DIR).as_posix(), "size": st.st_size, "mtime": int(st.st_mtime)})
     except Exception:
-        return 0
+        pass
+    files.sort(key=lambda f: f["mtime"], reverse=True)
+    return {"count": len(files), "files": files[:limit]}
 
 
 def status():
@@ -89,7 +97,7 @@ def status():
         "out_port": str(PORT),
         "app": app_status(),
         "revue": revue_status(),
-        "out": {"url": "/_out/", "files": out_count()},
+        "out": {"url": "/_out/", **out_files()},
     }
 
 
@@ -214,6 +222,11 @@ class Handler(BaseHTTPRequestHandler):
         p = urlsplit(self.path).path
         if p == "/":
             return self._panel()
+        if p == "/logo.svg":
+            try:
+                return self._send(200, LOGO_SVG.read_bytes(), "image/svg+xml")
+            except FileNotFoundError:
+                return self._send(404, "not found", "text/plain; charset=utf-8")
         if p == "/api/status":
             return self._send(200, status())
         if p in ("/_out", "/_out/"):

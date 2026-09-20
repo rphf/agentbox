@@ -4,43 +4,68 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>agentbox panel</title>
+<link rel="icon" type="image/svg+xml" href="/logo.svg">
 <style>
-  :root { color-scheme: light dark; --bg:#0b0d12; --card:#151922; --line:#232a37; --fg:#e6e8ee; --dim:#8891a4;
-          --link:#8ab4ff; --up:#3fb950; --down:#8891a4; --busy:#d29922; --btn:#222a38; --btnh:#2c3648; }
+  :root { color-scheme: light dark; --bg:#0b0d12; --card:#12161e; --line:#222835; --fg:#e6e8ee; --dim:#8891a4;
+          --link:#8ab4ff; --up:#3fb950; --down:#596273; --busy:#d29922; --btn:#1c222d; --btnh:#28303d;
+          --accent:#2f6feb; --accenth:#3b7bfa; --mono:ui-monospace,SFMono-Regular,Menlo,monospace; }
   @media (prefers-color-scheme: light) {
-    :root { --bg:#f5f6f8; --card:#fff; --line:#e3e6ec; --fg:#1a1d24; --dim:#5b6270;
-            --link:#1a56db; --btn:#eef0f4; --btnh:#e2e6ee; }
+    :root { --bg:#f6f7f9; --card:#fff; --line:#e4e7ec; --fg:#1a1d24; --dim:#66707f; --down:#b6bcc8;
+            --link:#1a56db; --btn:#f0f2f5; --btnh:#e4e8ee; }
   }
   * { box-sizing: border-box; }
-  body { margin:0; font:14px/1.55 system-ui,-apple-system,Segoe UI,sans-serif; background:var(--bg); color:var(--fg); }
-  .wrap { max-width:44rem; margin:0 auto; padding:1.5rem 1rem 3rem; }
-  header { display:flex; align-items:baseline; gap:.6rem; flex-wrap:wrap; margin-bottom:1.25rem; }
-  h1 { font-size:1.15rem; margin:0; font-weight:650; }
-  .host { color:var(--dim); font-size:.85rem; }
-  .live { margin-left:auto; color:var(--dim); font-size:.75rem; display:flex; align-items:center; gap:.35rem; }
-  .live::before { content:""; width:7px; height:7px; border-radius:50%; background:var(--up); opacity:.35;
-                  animation:pulse 2s infinite; }
-  @keyframes pulse { 0%,100%{opacity:.25} 50%{opacity:.9} }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:1rem 1.1rem; margin-bottom:.9rem; }
-  .card h2 { font-size:.95rem; margin:0 0 .15rem; font-weight:600; display:flex; align-items:center; gap:.5rem; }
-  .dot { width:9px; height:9px; border-radius:50%; background:var(--down); flex:none; }
+  body { margin:0; font:13.5px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--fg); }
+  .wrap { max-width: 46rem; margin: 0 auto; padding: 1.6rem 1rem 3rem; }
+
+  header { display:flex; align-items:center; gap:.7rem; margin-bottom:1.1rem; }
+  header img { width:28px; height:28px; border-radius:7px; flex:none; }
+  .title { display:flex; align-items:baseline; gap:.6rem; min-width:0; flex-wrap:wrap; }
+  h1 { font-size:1.05rem; margin:0; font-weight:650; letter-spacing:-.01em; white-space:nowrap; }
+  .host { color:var(--dim); font-size:.85rem; font-family:var(--mono); }
+  .live { margin-left:auto; color:var(--dim); font-size:.75rem; display:flex; align-items:center; gap:.4rem; white-space:nowrap; }
+  .live::before { content:""; width:6px; height:6px; border-radius:50%; background:var(--up); animation:pulse 2.4s infinite; }
+  @keyframes pulse { 0%,100%{opacity:.35} 50%{opacity:1} }
+
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:.85rem 1rem; margin-bottom:.7rem; }
+  .head { display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; min-height:2rem; }
+  .head h2 { font-size:.92rem; margin:0; font-weight:600; display:flex; align-items:center; gap:.55rem; white-space:nowrap; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--down); flex:none; }
   .dot.up { background:var(--up); } .dot.busy { background:var(--busy); }
-  .sub { color:var(--dim); font-size:.82rem; margin:0 0 .8rem; word-break:break-all; }
-  .sub a { color:var(--link); text-decoration:none; } .sub a:hover { text-decoration:underline; }
-  .row { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
-  button, a.btn { font:inherit; border:1px solid var(--line); background:var(--btn); color:var(--fg); cursor:pointer;
-                  padding:.42rem .8rem; border-radius:8px; text-decoration:none; display:inline-block; }
+  .state { color:var(--dim); font-size:.82rem; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .state a { color:var(--link); text-decoration:none; font-family:var(--mono); font-size:.8rem; }
+  .state a:hover { text-decoration:underline; }
+  .actions { margin-left:auto; display:flex; gap:.4rem; align-items:center; flex-wrap:wrap; }
+  .row2 { display:flex; gap:.4rem; align-items:center; margin-top:.6rem; }
+
+  button, a.btn { font:inherit; font-size:.85rem; border:1px solid var(--line); background:var(--btn); color:var(--fg);
+                  cursor:pointer; padding:.36rem .7rem; border-radius:8px; text-decoration:none; display:inline-block;
+                  white-space:nowrap; line-height:1.3; }
   button:hover, a.btn:hover { background:var(--btnh); }
   button:disabled { opacity:.4; cursor:not-allowed; }
-  button.primary, a.btn.primary { border-color:transparent; background:#2f6feb; color:#fff; }
-  button.primary:hover, a.btn.primary:hover { background:#3b7bfa; }
+  .primary { border-color:transparent !important; background:var(--accent) !important; color:#fff !important; }
+  .primary:hover { background:var(--accenth) !important; }
   a.btn.disabled { pointer-events:none; opacity:.4; }
-  input.args { font:inherit; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.8rem;
-               border:1px solid var(--line); background:var(--bg); color:var(--fg); border-radius:8px;
-               padding:.4rem .6rem; min-width:14rem; flex:1; }
-  .note { color:var(--dim); font-size:.8rem; margin:.6rem 0 0; }
+  input.args { font:inherit; font-family:var(--mono); font-size:.8rem; border:1px solid var(--line); background:var(--bg);
+               color:var(--fg); border-radius:8px; padding:.36rem .6rem; flex:1; min-width:10rem; }
+  input.args:focus { outline:none; border-color:var(--accent); }
+
+  .files { list-style:none; margin:.6rem 0 0; padding:0; border-top:1px solid var(--line); }
+  .files li { display:flex; align-items:baseline; gap:.8rem; padding:.38rem 0; border-bottom:1px solid var(--line); font-size:.83rem; }
+  .files li:last-child { border-bottom:0; }
+  .files a { color:var(--fg); text-decoration:none; font-family:var(--mono); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+  .files a:hover { color:var(--link); }
+  .files .meta { color:var(--dim); white-space:nowrap; font-variant-numeric:tabular-nums; font-size:.78rem; }
+  .files .meta.size { min-width:4.5rem; text-align:right; }
+  .files .meta.age { min-width:5rem; text-align:right; }
+  .empty { color:var(--dim); font-size:.83rem; margin:.6rem 0 0; }
+  .more { display:block; margin-top:.5rem; font-size:.8rem; color:var(--link); text-decoration:none; }
+  .more:hover { text-decoration:underline; }
+  code.cmd { font-family:var(--mono); font-size:.78rem; color:var(--dim); background:var(--btn); border:1px solid var(--line);
+             border-radius:6px; padding:.15rem .45rem; cursor:pointer; white-space:nowrap; }
+  code.cmd:hover { color:var(--fg); }
+
   #toast { position:fixed; left:50%; bottom:1.2rem; transform:translateX(-50%); background:var(--card);
-           border:1px solid var(--line); padding:.5rem .9rem; border-radius:8px; font-size:.82rem;
+           border:1px solid var(--line); padding:.45rem .85rem; border-radius:8px; font-size:.82rem;
            box-shadow:0 6px 24px rgba(0,0,0,.3); opacity:0; transition:opacity .2s; pointer-events:none; }
   #toast.show { opacity:1; }
 </style>
@@ -48,30 +73,41 @@
 <body>
 <div class="wrap">
   <header>
-    <h1 id="agent">agentbox</h1>
-    <span class="host" id="host"></span>
+    <img src="/logo.svg" alt="">
+    <div class="title"><h1 id="agent">agentbox</h1><span class="host" id="host"></span></div>
     <span class="live">live</span>
   </header>
 
-  <section class="card" id="app-card">
-    <h2><span class="dot" id="app-dot"></span>App</h2>
-    <p class="sub" id="app-sub">checking…</p>
-    <div class="row" id="app-actions"></div>
-  </section>
-
-  <section class="card" id="revue-card">
-    <h2><span class="dot" id="revue-dot"></span>Code review (revue)</h2>
-    <p class="sub" id="revue-sub">checking…</p>
-    <div class="row" id="revue-actions"></div>
-    <p class="note" id="revue-note"></p>
+  <section class="card">
+    <div class="head">
+      <h2><span class="dot" id="app-dot"></span>App</h2>
+      <span class="state" id="app-state">checking…</span>
+      <div class="actions" id="app-actions"></div>
+    </div>
   </section>
 
   <section class="card">
-    <h2><span class="dot up"></span>Outbox (~/out)</h2>
-    <p class="sub" id="out-sub">files the agent hands back</p>
-    <div class="row"><a class="btn" id="out-link" href="/_out/">Browse files</a></div>
+    <div class="head">
+      <h2><span class="dot" id="revue-dot"></span>Code review</h2>
+      <span class="state" id="revue-state">checking…</span>
+      <div class="actions" id="revue-actions"></div>
+    </div>
+    <div class="row2" id="revue-row2" hidden>
+      <input class="args" id="revue-args" placeholder="git diff arguments, e.g. main...HEAD or -- app/" aria-label="git diff arguments">
+      <button id="revue-open-args">Open that diff</button>
+    </div>
   </section>
 
+  <section class="card">
+    <div class="head">
+      <h2><span class="dot up"></span>Outbox</h2>
+      <span class="state" id="out-state"></span>
+      <div class="actions"><code class="cmd" id="out-cmd" title="click to copy">agentbox get N</code></div>
+    </div>
+    <ul class="files" id="out-files"></ul>
+    <p class="empty" id="out-empty" hidden>Nothing handed back yet. Files the agent writes to ~/out show up here.</p>
+    <a class="more" id="out-more" href="/_out/" hidden></a>
+  </section>
 </div>
 <div id="toast"></div>
 
@@ -79,10 +115,11 @@
   const $ = (id) => document.getElementById(id);
   let pendingUntil = 0; // while starting the app, keep the dot amber and poll faster
   let revueBusy = false; // an open or stop in flight: leave the revue controls alone until it lands
+  const MAX_FILES = 8;
 
   function toast(msg) {
     const t = $("toast"); t.textContent = msg; t.classList.add("show");
-    clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 2500);
+    clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 2200);
   }
 
   async function post(path, body) {
@@ -94,6 +131,25 @@
       });
       return await r.json();
     } catch (e) { return { ok: false, error: String(e) }; }
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  function size(n) {
+    if (n < 1024) return n + " B";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(n < 10240 ? 1 : 0) + " KB";
+    return (n / 1024 / 1024).toFixed(1) + " MB";
+  }
+
+  function age(ts) {
+    const s = Math.max(0, Math.floor(Date.now() / 1000 - ts));
+    if (s < 60) return "just now";
+    if (s < 3600) return Math.floor(s / 60) + " min ago";
+    if (s < 86400) return Math.floor(s / 3600) + " h ago";
+    if (s < 7 * 86400) return Math.floor(s / 86400) + " d ago";
+    return new Date(ts * 1000).toLocaleDateString();
   }
 
   // Open the tab on the click itself, before any await, so the popup blocker sees a user gesture; the
@@ -110,54 +166,51 @@
 
   function render(s) {
     $("agent").textContent = s.agent || "agentbox";
-    $("host").textContent = s.host ? s.host + " · outbox :" + s.out_port : "";
+    $("host").textContent = s.host || "";
+    $("out-cmd").textContent = "agentbox get " + (s.agent_num || "N");
 
     // App
     const a = s.app || {};
     const starting = Date.now() < pendingUntil && !a.up;
-    const dot = $("app-dot");
-    dot.className = "dot" + (a.up ? " up" : starting ? " busy" : "");
+    $("app-dot").className = "dot" + (a.up ? " up" : starting ? " busy" : "");
     if (!a.available) {
-      $("app-sub").textContent = "this box defines no `app` command";
+      $("app-state").textContent = "no app command in this box";
       $("app-actions").innerHTML = "";
     } else {
-      $("app-sub").innerHTML = starting ? "starting… (Rails can take ~40 s)"
-        : a.up ? 'up — <a href="' + a.url + '" target="_blank" rel="noopener">' + a.url + "</a>"
-        : "stopped — holds ~0.8 GB while up, so start it only when you need it";
+      $("app-state").innerHTML = starting ? "starting…"
+        : a.up ? '<a href="' + esc(a.url) + '" target="_blank" rel="noopener">' + esc(a.url) + "</a>"
+        : "stopped";
       $("app-actions").innerHTML =
-        '<a class="btn primary' + (a.up ? "" : " disabled") + '" href="' + (a.url || "#") + '" target="_blank" rel="noopener">Open</a>'
+        '<a class="btn primary' + (a.up ? "" : " disabled") + '" href="' + esc(a.url || "#") + '" target="_blank" rel="noopener">Open</a>'
         + '<button id="app-start"' + (a.up || starting ? " disabled" : "") + ">Start</button>"
         + '<button id="app-stop"' + (a.up ? "" : " disabled") + ">Stop</button>";
-      const start = $("app-start"), stop = $("app-stop");
-      if (start) start.onclick = async () => {
-        start.disabled = true; toast("starting the app…"); pendingUntil = Date.now() + 90000;
+      $("app-start").onclick = async () => {
+        $("app-start").disabled = true; toast("starting the app…"); pendingUntil = Date.now() + 90000;
         await post("/api/app/start"); refresh();
       };
-      if (stop) stop.onclick = async () => {
-        stop.disabled = true; toast("stopping the app…"); pendingUntil = 0;
-        const r = await post("/api/app/stop"); toast(r.ok ? "stopped" : "stop failed"); refresh();
+      $("app-stop").onclick = async () => {
+        $("app-stop").disabled = true; toast("stopping the app…"); pendingUntil = 0;
+        const r = await post("/api/app/stop"); toast(r.ok ? "app stopped" : "stop failed"); refresh();
       };
     }
 
-    // Revue: the reviewer's page follows the box's working tree live. Opening mints a login link (which
-    // starts the server when it is down) and lands on the diff; the browser holds no cookie for the box
-    // until then, so a plain link to the port would only show a 401.
+    // Code review: the reviewer's page follows the box's working tree live. Opening mints a login link
+    // (which starts the server when it is down) and lands on the diff.
     const rv = s.revue || {};
     $("revue-dot").className = "dot" + (rv.up ? " up" : "");
     if (!rv.available) {
-      $("revue-sub").textContent = "no review port on this box";
+      $("revue-state").textContent = "no review port on this box";
       $("revue-actions").innerHTML = "";
-      $("revue-note").textContent = "";
+      $("revue-row2").hidden = true;
     } else if (!revueBusy) {
-      $("revue-sub").innerHTML = rv.up
-        ? "running" + (rv.version ? " — revue " + rv.version : "") + ' — <a href="' + rv.url + '" target="_blank" rel="noopener">' + rv.url + "</a>"
-        : "stopped" + (rv.version ? " — revue " + rv.version : "") + " — starts when you open a diff";
+      $("revue-state").innerHTML = rv.up
+        ? '<a href="' + esc(rv.url) + '" target="_blank" rel="noopener">' + esc(rv.url.replace(/^https?:\/\//, "")) + "</a>"
+          + (rv.version ? " · revue " + esc(rv.version) : "")
+        : "stopped" + (rv.version ? " · revue " + esc(rv.version) : "");
       $("revue-actions").innerHTML =
         '<button class="primary" id="revue-open">Open working tree</button>'
-        + '<input class="args" id="revue-args" placeholder="or git diff arguments: main...HEAD" aria-label="git diff arguments">'
-        + '<button id="revue-open-args">Open</button>'
-        + '<button id="revue-stop"' + (rv.up ? "" : " disabled") + ">Stop server</button>";
-      $("revue-note").textContent = "The page follows the agent's working tree as it changes; the agent reads your comments with revue feedback.";
+        + '<button id="revue-stop"' + (rv.up ? "" : " disabled") + ">Stop</button>";
+      $("revue-row2").hidden = false;
       $("revue-open").onclick = () => openRevue([]);
       const argsBox = $("revue-args");
       const openArgs = () => {
@@ -174,10 +227,25 @@
       };
     }
 
-    // Out
+    // Outbox: newest first, the rest one click away.
     const o = s.out || {};
-    $("out-sub").textContent = (o.files || 0) + " file" + (o.files === 1 ? "" : "s") + " in ~/out";
+    const files = o.files || [];
+    const count = o.count ?? files.length;
+    $("out-state").textContent = count === 0 ? "empty" : count + " file" + (count === 1 ? "" : "s");
+    $("out-files").innerHTML = files.slice(0, MAX_FILES).map((f) =>
+      '<li><a href="/' + esc(f.name).replace(/%/g, "%25") + '" target="_blank" rel="noopener">' + esc(f.name) + "</a>"
+      + '<span class="meta size">' + size(f.size) + "</span>"
+      + '<span class="meta age">' + age(f.mtime) + "</span></li>").join("");
+    $("out-empty").hidden = count !== 0;
+    const more = $("out-more");
+    more.hidden = count <= MAX_FILES;
+    more.textContent = "All " + count + " files";
   }
+
+  $("out-cmd").onclick = async () => {
+    try { await navigator.clipboard.writeText($("out-cmd").textContent); toast("copied"); }
+    catch (e) { toast($("out-cmd").textContent); }
+  };
 
   async function refresh() {
     try {
