@@ -19,6 +19,12 @@ if [ ! -d .git ]; then
   git checkout --quiet "${REPO_BRANCH:-main}" 2>/dev/null || true
 fi
 
+# Install the co-author hook into this clone (every up, idempotent). A project with its own core.hooksPath
+# (e.g. husky) uses that instead and bypasses this.
+if [ -d .git ] && [ -f /agentbox/git-hooks/prepare-commit-msg ]; then
+  install -m 755 /agentbox/git-hooks/prepare-commit-msg "$(git rev-parse --git-path hooks)/prepare-commit-msg"
+fi
+
 # Home overlay: a directory in the overlay is merged into the same directory of the home (created when missing),
 # so per-agent state next to it survives; a file is linked in place, so it follows the overlay live and the agent
 # cannot alter it. Links left behind by files removed from the overlay are dropped first.

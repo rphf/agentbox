@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# prepare-commit-msg: when a human (DEV_*) is the author, credit the agentbox bot as Co-authored-by, using git's
+# own interpret-trailers. Dedupes, and adds nothing when the bot itself authors or on a merge/squash commit.
+set -uo pipefail
+msg_file="$1"; src="${2:-}"
+case "$src" in merge|squash) exit 0 ;; esac
+[ -n "${BOT_NAME:-}" ] && [ -n "${BOT_EMAIL:-}" ] || exit 0
+author_email="$(git var GIT_AUTHOR_IDENT 2>/dev/null | sed -n 's/.*<\(.*\)>.*/\1/p')"
+[ "$author_email" = "$BOT_EMAIL" ] && exit 0
+git interpret-trailers --if-exists addIfDifferent --where end \
+  --trailer "Co-authored-by: $BOT_NAME <$BOT_EMAIL>" --in-place "$msg_file" 2>/dev/null || true
+exit 0
