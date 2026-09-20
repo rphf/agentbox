@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agentbox panel</title>
+<style>
+  :root { color-scheme: light dark; --bg:#0b0d12; --card:#151922; --line:#232a37; --fg:#e6e8ee; --dim:#8891a4;
+          --link:#8ab4ff; --up:#3fb950; --down:#8891a4; --busy:#d29922; --btn:#222a38; --btnh:#2c3648; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f5f6f8; --card:#fff; --line:#e3e6ec; --fg:#1a1d24; --dim:#5b6270;
+            --link:#1a56db; --btn:#eef0f4; --btnh:#e2e6ee; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.55 system-ui,-apple-system,Segoe UI,sans-serif; background:var(--bg); color:var(--fg); }
+  .wrap { max-width:44rem; margin:0 auto; padding:1.5rem 1rem 3rem; }
+  header { display:flex; align-items:baseline; gap:.6rem; flex-wrap:wrap; margin-bottom:1.25rem; }
+  h1 { font-size:1.15rem; margin:0; font-weight:650; }
+  .host { color:var(--dim); font-size:.85rem; }
+  .live { margin-left:auto; color:var(--dim); font-size:.75rem; display:flex; align-items:center; gap:.35rem; }
+  .live::before { content:""; width:7px; height:7px; border-radius:50%; background:var(--up); opacity:.35;
+                  animation:pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:.25} 50%{opacity:.9} }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:1rem 1.1rem; margin-bottom:.9rem; }
+  .card h2 { font-size:.95rem; margin:0 0 .15rem; font-weight:600; display:flex; align-items:center; gap:.5rem; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--down); flex:none; }
+  .dot.up { background:var(--up); } .dot.busy { background:var(--busy); }
+  .sub { color:var(--dim); font-size:.82rem; margin:0 0 .8rem; word-break:break-all; }
+  .sub a { color:var(--link); text-decoration:none; } .sub a:hover { text-decoration:underline; }
+  .row { display:flex; gap:.5rem; flex-wrap:wrap; }
+  button, a.btn { font:inherit; border:1px solid var(--line); background:var(--btn); color:var(--fg); cursor:pointer;
+                  padding:.42rem .8rem; border-radius:8px; text-decoration:none; display:inline-block; }
+  button:hover, a.btn:hover { background:var(--btnh); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  a.btn.primary { border-color:transparent; background:#2f6feb; color:#fff; }
+  a.btn.primary:hover { background:#3b7bfa; }
+  a.btn.disabled { pointer-events:none; opacity:.4; }
+  .note { color:var(--dim); font-size:.8rem; margin:.6rem 0 0; }
+  #toast { position:fixed; left:50%; bottom:1.2rem; transform:translateX(-50%); background:var(--card);
+           border:1px solid var(--line); padding:.5rem .9rem; border-radius:8px; font-size:.82rem;
+           box-shadow:0 6px 24px rgba(0,0,0,.3); opacity:0; transition:opacity .2s; pointer-events:none; }
+  #toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 id="agent">agentbox</h1>
+    <span class="host" id="host"></span>
+    <span class="live">live</span>
+  </header>
+
+  <section class="card" id="app-card">
+    <h2><span class="dot" id="app-dot"></span>App</h2>
+    <p class="sub" id="app-sub">checking…</p>
+    <div class="row" id="app-actions"></div>
+  </section>
+
+  <section class="card" id="revue-card">
+    <h2><span class="dot" id="revue-dot"></span>Code review (revue)</h2>
+    <p class="sub" id="revue-sub">checking…</p>
+    <div class="row" id="revue-actions"></div>
+  </section>
+
+  <section class="card">
+    <h2><span class="dot up"></span>Outbox (~/out)</h2>
+    <p class="sub" id="out-sub">files the agent hands back</p>
+    <div class="row"><a class="btn" id="out-link" href="/_out/">Browse files</a></div>
+  </section>
+
+</div>
+<div id="toast"></div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let pendingUntil = 0; // while starting the app, keep the dot amber and poll faster
+
+  function toast(msg) {
+    const t = $("toast"); t.textContent = msg; t.classList.add("show");
+    clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 2500);
+  }
+
+  async function post(path) {
+    try {
+      const r = await fetch(path, { method: "POST" });
+      return await r.json();
+    } catch (e) { return { ok: false, error: String(e) }; }
+  }
+
+  function render(s) {
+    $("agent").textContent = s.agent || "agentbox";
+    $("host").textContent = s.host ? s.host + " · outbox :" + s.out_port : "";
+
+    // App
+    const a = s.app || {};
+    const starting = Date.now() < pendingUntil && !a.up;
+    const dot = $("app-dot");
+    dot.className = "dot" + (a.up ? " up" : starting ? " busy" : "");
+    if (!a.available) {
+      $("app-sub").textContent = "this box defines no `app` command";
+      $("app-actions").innerHTML = "";
+    } else {
+      $("app-sub").innerHTML = starting ? "starting… (Rails can take ~40 s)"
+        : a.up ? 'up — <a href="' + a.url + '" target="_blank" rel="noopener">' + a.url + "</a>"
+        : "stopped — holds ~0.8 GB while up, so start it only when you need it";
+      $("app-actions").innerHTML =
+        '<a class="btn primary' + (a.up ? "" : " disabled") + '" href="' + (a.url || "#") + '" target="_blank" rel="noopener">Open</a>'
+        + '<button id="app-start"' + (a.up || starting ? " disabled" : "") + ">Start</button>"
+        + '<button id="app-stop"' + (a.up ? "" : " disabled") + ">Stop</button>";
+      const start = $("app-start"), stop = $("app-stop");
+      if (start) start.onclick = async () => {
+        start.disabled = true; toast("starting the app…"); pendingUntil = Date.now() + 90000;
+        await post("/api/app/start"); refresh();
+      };
+      if (stop) stop.onclick = async () => {
+        stop.disabled = true; toast("stopping the app…"); pendingUntil = 0;
+        const r = await post("/api/app/stop"); toast(r.ok ? "stopped" : "stop failed"); refresh();
+      };
+    }
+
+    // Revue
+    const rv = s.revue || {};
+    $("revue-dot").className = "dot" + (rv.up ? " up" : "");
+    if (!rv.available) {
+      $("revue-sub").textContent = "no review port on this box";
+      $("revue-actions").innerHTML = "";
+    } else {
+      $("revue-sub").innerHTML = rv.up
+        ? 'running — <a href="' + rv.url + '" target="_blank" rel="noopener">open reviews</a>'
+        : "idle — open a review of the working tree to start it";
+      $("revue-actions").innerHTML =
+        '<a class="btn' + (rv.up ? "" : " disabled") + '" href="' + (rv.url || "#") + '" target="_blank" rel="noopener">Open reviews</a>'
+        + '<button id="revue-open">New review (working tree)</button>';
+      $("revue-open").onclick = async () => {
+        const b = $("revue-open"); b.disabled = true; toast("opening a review…");
+        const r = await post("/api/revue/open");
+        if (r.ok && r.url) { toast("review ready"); window.open(r.url, "_blank", "noopener"); }
+        else toast(r.error || "revue open failed");
+        b.disabled = false; refresh();
+      };
+    }
+
+    // Out
+    const o = s.out || {};
+    $("out-sub").textContent = (o.files || 0) + " file" + (o.files === 1 ? "" : "s") + " in ~/out";
+  }
+
+  async function refresh() {
+    try {
+      const r = await fetch("/api/status", { cache: "no-store" });
+      render(await r.json());
+    } catch (e) { /* keep last render on a transient failure */ }
+  }
+
+  refresh();
+  setInterval(() => refresh(), 3000);
+</script>
+</body>
+</html>

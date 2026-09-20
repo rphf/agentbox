@@ -11,6 +11,7 @@
 #   agentbox ps                     list this project's agents
 #   agentbox url N                  print this agent's URLs
 #   agentbox open N [PORT_NAME]     open one of them in your browser (default: the first port)
+#   agentbox panel N                open agent N's control panel (app start/stop, reviews, outbox)
 #   agentbox get N [file]           copy agent N's ~/out to ./tmp/agentbox/agent-N/ on the host
 #   agentbox review N [diff args]   review agent N's uncommitted changes in your browser (revue open --reuse)
 #   agentbox reviews N [ID]         list agent N's reviews, or open review ID in your browser
@@ -181,6 +182,15 @@ cmd_open() {
   browse "$url"
 }
 
+cmd_panel() {
+  local n=${1:?usage: agentbox panel N} url
+  load_settings; agent_env "$n"
+  [ -n "${OUT_PORT:-}" ] || die "this project publishes no OUT_PORT in PORTS"
+  url="http://$AGENT_HOST:$OUT_PORT"
+  echo "$url"
+  browse "$url"
+}
+
 cmd_review() {
   local n=${1:?usage: agentbox review N [git-diff args]} out url
   load_settings; agent_env "$n"; shift
@@ -257,6 +267,7 @@ case "$cmd" in
   get) cmd_get "$@" ;;
   url) cmd_url "$@" ;;
   open) cmd_open "$@" ;;
+  panel) cmd_panel "$@" ;;
   review) cmd_review "$@" ;;
   reviews) cmd_reviews "$@" ;;
   *) usage ;;

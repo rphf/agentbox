@@ -92,8 +92,9 @@ Nothing here is precious except what you hand back, and nothing you do here reac
 ## Handing work and files back
 
 - Put anything the human should see in \`$HOME/out\`: screenshots, reports, logs, diffs, bundles.
-  They read it at **http://${AGENT_HOST}:${OUT_PORT:-<no out port>}/** from their browser and pull it with
-  \`agentbox get ${AGENT:-N}\`. Nothing else leaves this container.
+  Each file is then at **http://${AGENT_HOST}:${OUT_PORT:-<no out port>}/<name>** (give that URL, not the path);
+  the same host and port also serves the human a control panel at \`/\` — app status with start/stop, the links
+  to reviews and the outbox. They pull files with \`agentbox get ${AGENT:-N}\`. Nothing else leaves this container.
 - Never write artifacts into the repository at /workspace. That is source, and a stray file shows up in
   \`git status\` and ends up in someone's commit.
 - Name files so a list of them reads as a story: \`01-signin.png\`, \`02-dashboard-after-fix.png\`.
@@ -120,12 +121,15 @@ The human fetches that bundle and pushes it themselves.
 - Every hostname you resolve is logged. \`net-log hosts\` shows the list; it is a record, not a restriction.
 - You may install packages, run migrations, drop databases and force-push branches here. The container is the
   blast radius, and it is cheap to rebuild.
+- This sandbox is long-lived. A heavy thing you start — an app server, a browser, a file watcher — keeps running
+  and holding memory and CPU until you stop it, even while you sit idle. Start such things when a task needs them
+  and stop them when it is done; the project notes below say which commands do that here.
 
 @/workspace/.agentbox/AGENT.md
 EOF
 
 if [ -n "${OUT_PORT:-}" ] && ! ss -ltnH "sport = :$OUT_PORT" 2>/dev/null | grep -q .; then
-  setsid python3 -m http.server "$OUT_PORT" --directory "$HOME/out" --bind 0.0.0.0 >/dev/null 2>&1 </dev/null &
+  setsid python3 /agentbox/panel >/dev/null 2>&1 </dev/null &
   disown 2>/dev/null || true
 fi
 

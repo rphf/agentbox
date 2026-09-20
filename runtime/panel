@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+# agentbox panel — the per-agent control page, served on OUT_PORT (the outbox port). It replaces the plain
+# static file server the bootstrap used to run: GET / is the panel, GET /<name> still serves ~/out files (so the
+# URLs the agent hands back keep working), /_out/ lists them, and /api/* reports status and starts/stops the app
+# and revue. Runs as `agent` from the bootstrap; stdlib only (python3 is guaranteed in the image). It lives on
+# the runtime mount at /agentbox, so edits need no image rebuild.
+import json
+import mimetypes
+import os
+import shutil
+import subprocess
+import urllib.error
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import unquote, urlsplit
+
+HOME = Path(os.environ.get("HOME", "/home/agent"))
+OUT_DIR = (HOME / "out").resolve()
+PORT = int(os.environ.get("OUT_PORT") or 0)
+AGENT_HOST = os.environ.get("AGENT_HOST", "localhost")
+AGENT_NAME = os.environ.get("AGENT_NAME", "agentbox")
+AGENT_NUM = os.environ.get("AGENT", "")
+REVUE_PORT = os.environ.get("REVUE_PORT", "")
+REVUE_URL = os.environ.get("REVUE_PUBLIC_URL") or (f"http://{AGENT_HOST}:{REVUE_PORT}" if REVUE_PORT else "")
+PANEL_HTML = Path(__file__).resolve().parent / "panel.html"
+WORKDIR = "/workspace"
+
+
+def have(cmd):
+    return shutil.which(cmd) is not None
+
+
+def run(cmd, timeout=90):
+    try:
+        p = subprocess.run(cmd, cwd=WORKDIR, capture_output=True, text=True, timeout=timeout)
+        return p.returncode, p.stdout, p.stderr
+    except Exception as e:
+        return 1, "", str(e)
+
+
+def probe(url, timeout=2):
+    # Any answer — even 401/403/500 — means the server is up; only a refused or timed-out connection is "down".
+    if not url:
+        return False
+    try:
+        urllib.request.urlopen(urllib.request.Request(url, method="GET"), timeout=timeout)
+        return True
+    except urllib.error.HTTPError:
+        return True
+    except Exception:
+        return False
+
+
+def app_status():
+    if not have("app"):
+        return {"available": False}
+    _, out, _ = run(["app", "url"], timeout=10)
+    lines = [ln.strip() for ln in out.splitlines() if ln.strip()]
+    url = lines[-1] if lines else ""
+    return {"available": True, "url": url, "up": probe(url)}
+
+
+def revue_status():
+    if not REVUE_URL:
+        return {"available": False}
+    return {"available": True, "url": REVUE_URL, "up": probe(REVUE_URL)}
+
+
+def out_count():
+    try:
+        return sum(1 for p in OUT_DIR.rglob("*") if p.is_file())
+    except Exception:
+        return 0
+
+
+def status():
+    return {
+        "agent": AGENT_NAME,
+        "agent_num": AGENT_NUM,
+        "host": AGENT_HOST,
+        "out_port": str(PORT),
+        "app": app_status(),
+        "revue": revue_status(),
+        "out": {"url": "/_out/", "files": out_count()},
+    }
+
+
+def safe_out_path(path):
+    target = (OUT_DIR / unquote(path.lstrip("/"))).resolve()
+    if target == OUT_DIR or OUT_DIR in target.parents:
+        return target
+    return None
+
+
+def revue_open():
+    rc, out, err = run(["revue", "open", "--no-browser", "--reuse"], timeout=60)
+    blob = out + err
+    if "empty_diff" in blob:
+        return {"ok": False, "error": "no uncommitted changes to review"}
+    url = ""
+    for line in out.splitlines():
+        s = line.strip()
+        if s.startswith('"url"'):
+            url = s.split(":", 1)[1].strip().rstrip(",").strip('"')
+            break
+    return {"ok": rc == 0 and bool(url), "url": url, "output": blob.strip()[:500]}
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "agentbox-panel"
+
+    def log_message(self, *args):
+        pass
+
+    def _send(self, code, body, ctype="application/json"):
+        if isinstance(body, (dict, list)):
+            body, ctype = json.dumps(body).encode(), "application/json"
+        elif isinstance(body, str):
+            body = body.encode()
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def _panel(self):
+        try:
+            self._send(200, PANEL_HTML.read_bytes(), "text/html; charset=utf-8")
+        except FileNotFoundError:
+            self._send(500, "panel.html is missing next to this server", "text/plain; charset=utf-8")
+
+    def _listing(self, directory):
+        try:
+            items = sorted(directory.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
+        except FileNotFoundError:
+            items = []
+        rel = "/" if directory == OUT_DIR else "/" + str(directory.relative_to(OUT_DIR)) + "/"
+        rows = "".join(
+            '<li><a href="/{href}">{name}</a></li>'.format(
+                href=str(p.relative_to(OUT_DIR)) + ("/" if p.is_dir() else ""),
+                name=p.name + ("/" if p.is_dir() else ""),
+            )
+            for p in items
+        ) or "<li class=empty>empty</li>"
+        html = (
+            "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
+            "<title>out" + rel + "</title>"
+            "<style>body{font:14px/1.6 system-ui,sans-serif;margin:2rem;max-width:40rem;background:#0b0d12;color:#e6e8ee}"
+            "a{color:#8ab4ff}ul{list-style:none;padding:0}li{padding:.15rem 0}.empty{color:#7a8194}"
+            ".top{color:#7a8194;margin-bottom:1rem}</style>"
+            "<div class=top>~/out" + rel + " · <a href='/'>&larr; panel</a></div><ul>" + rows + "</ul>"
+        )
+        self._send(200, html, "text/html; charset=utf-8")
+
+    def _out_file(self, path):
+        target = safe_out_path(path)
+        if target is None:
+            return self._send(404, "not found", "text/plain; charset=utf-8")
+        if target.is_dir():
+            return self._listing(target)
+        if not target.is_file():
+            return self._send(404, "not found", "text/plain; charset=utf-8")
+        ctype = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+        self._send(200, target.read_bytes(), ctype)
+
+    def do_HEAD(self):
+        self.do_GET()
+
+    def do_GET(self):
+        p = urlsplit(self.path).path
+        if p == "/":
+            return self._panel()
+        if p == "/api/status":
+            return self._send(200, status())
+        if p in ("/_out", "/_out/"):
+            return self._listing(OUT_DIR)
+        return self._out_file(p)
+
+    def do_POST(self):
+        p = urlsplit(self.path).path
+        if p == "/api/app/start":
+            if not have("app"):
+                return self._send(400, {"ok": False, "error": "this box has no app command"})
+            subprocess.Popen(
+                ["app", "start"], cwd=WORKDIR, stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+            )
+            return self._send(202, {"ok": True, "action": "starting"})
+        if p == "/api/app/stop":
+            if not have("app"):
+                return self._send(400, {"ok": False, "error": "this box has no app command"})
+            rc, out, err = run(["app", "stop"], timeout=30)
+            return self._send(200, {"ok": rc == 0, "output": (out + err).strip()})
+        if p == "/api/revue/open":
+            if not have("revue"):
+                return self._send(400, {"ok": False, "error": "this box has no revue command"})
+            return self._send(200, revue_open())
+        return self._send(404, {"ok": False, "error": "not found"})
+
+
+def main():
+    if PORT == 0:
+        raise SystemExit("panel: OUT_PORT is not set; nothing to serve")
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+
+
+if __name__ == "__main__":
+    main()
