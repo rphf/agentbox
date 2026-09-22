@@ -126,6 +126,9 @@ The human fetches that bundle and pushes it themselves.
 - Your hostname is \`${AGENT_HOST}\` and it resolves both here and in the human's browser, so a URL you see works
   for them unchanged. Prefer it over \`localhost\` when you report a link.
 - Every hostname you resolve is logged. \`net-log hosts\` shows the list; it is a record, not a restriction.
+- An MCP server that asks for an OAuth login cannot finish it through the browser from here: its callback listens
+  on a random port inside this container, and the human's browser would open that port on their own machine.
+  Use \`claude mcp login <server> --no-browser\`, then paste the redirect URL back when it prompts.
 - You may install packages, run migrations, drop databases and force-push branches here. The container is the
   blast radius, and it is cheap to rebuild.
 - This sandbox is long-lived. A heavy thing you start — an app server, a browser, a file watcher — keeps running

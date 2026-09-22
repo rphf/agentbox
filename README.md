@@ -191,3 +191,25 @@ to one repo.
 | `external volume "…" not found` | The project's `setup` has not run. |
 | A change to the project `bootstrap` or `app` has no effect | They are baked in: `agentbox build`, then `up`. |
 | Want to see what Compose actually runs | `agentbox compose N config` |
+| Logging in to an MCP server opens a link, and the browser says it cannot connect to `localhost:<port>` | The OAuth callback listens inside the box, on a random port nobody published. Use `claude mcp login <server> --no-browser`, below. |
+
+### Logging in to an MCP server from a box
+
+An MCP server that uses OAuth starts a callback listener on a random loopback port **inside the container**, then
+asks the browser to open `http://localhost:<port>/callback?…`. That lands on your own machine's loopback, where
+nothing is listening, so the login never finishes. The port is picked per flow, so it cannot be published ahead
+of time.
+
+Claude Code has a flag for this, meant for headless sessions:
+
+```bash
+claude mcp login <server> --no-browser      # in the box
+```
+
+It prints the authorization URL instead of opening a browser. Open it yourself, approve, and the browser lands on
+that unreachable `localhost:<port>` page — expected. Copy **that** URL from the address bar and paste it back at
+the prompt; Claude Code takes the code from it and finishes the exchange.
+
+`claude mcp logout <server>` clears stored credentials, which is what to do first if a token expired: a stale
+entry can keep a server failing even though the login "worked". Tokens live in `~/.claude/.credentials.json`
+under `mcpOAuth`, inside the box's home volume, so they survive `down`/`up` but not `destroy`.
