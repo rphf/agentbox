@@ -98,7 +98,9 @@ WORKDIR /workspace
 CMD ["sleep", "infinity"]
 ```
 
-`install.sh` adds user `agent` (uid 1000), Claude Code, Playwright MCP with Chromium and WebKit, `gh` and its
+`install.sh` adds user `agent` (uid 1000), Claude Code (installed natively into `/home/agent/.local`, not with
+`npm -g`, so `claude update` can write to it; `/usr/local/bin/claude` is a shim standing in for `~/.local/bin`,
+which is not on PATH), Playwright MCP with Chromium and WebKit, `gh` and its
 `gh-stack` extension for stacked pull requests, zsh, tmux,
 lazygit, delta, revue (latest release), dnsmasq, socat, the `net-log`, `gh`, `pbcopy` and `open` shims, and the git credential helper for
 `/run/secrets/gh-token`. Any directory the project mounts a volume on must exist in the image and belong to

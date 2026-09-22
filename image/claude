@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# claude shim: run the agent's own native install. It lives in $HOME, a volume the agent owns, so `claude update`
+# can write to it — an npm -g install cannot, which is the whole reason this is not one. ~/.local/bin is not on
+# PATH, so this stands in for it from /usr/local/bin. The image ships the install; the bootstrap restores it if a
+# home volume predates it.
+if [ -x "$HOME/.local/bin/claude" ]; then
+  exec "$HOME/.local/bin/claude" "$@"
+fi
+echo "claude: nothing installed in \$HOME/.local/bin — run: curl -fsSL https://claude.ai/install.sh | bash" >&2
+exit 127

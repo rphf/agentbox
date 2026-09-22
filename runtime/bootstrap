@@ -95,6 +95,14 @@ if [ -d /agent-home ] && [ -n "$(ls -A /agent-home)" ]; then
   overlay /agent-home "$HOME"
 fi
 
+# Claude Code lives in $HOME so that `claude update` can write to it. The image ships it there, but a home volume
+# created before that change has none, and Docker only seeds an empty volume — so put it back when it is missing.
+if [ ! -x "$HOME/.local/bin/claude" ]; then
+  echo "── installing Claude Code into $HOME, so it can update itself"
+  curl -fsSL https://claude.ai/install.sh | bash >/dev/null 2>&1 \
+    || echo "   could not install it; run: curl -fsSL https://claude.ai/install.sh | bash"
+fi
+
 mkdir -p "$HOME/out"
 
 python3 - <<'PY'

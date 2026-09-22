@@ -72,10 +72,10 @@ if ! command -v node >/dev/null; then
     | tar -xJ -C /usr/local --strip-components=1 --no-same-owner
 fi
 
-# Claude Code + Playwright MCP, global. Browsers go to a shared path; compose.base.yml sets
+# Playwright MCP, global. Browsers go to a shared path; compose.base.yml sets
 # PLAYWRIGHT_BROWSERS_PATH to the same value so every user in the container finds them.
 export PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
-npm install -g @anthropic-ai/claude-code "@playwright/mcp@${PLAYWRIGHT_MCP_VERSION}"
+npm install -g "@playwright/mcp@${PLAYWRIGHT_MCP_VERSION}"
 npm cache clean --force
 pw_dir="$(find "$(npm root -g)" -type d \( -path '*/node_modules/playwright' -o -path '*/node_modules/playwright-core' \) | head -1)"
 test -n "$pw_dir"
@@ -102,6 +102,17 @@ git clone --quiet --depth 1 --branch "$ZSH_SYNTAX_HIGHLIGHTING_VERSION" \
   https://github.com/zsh-users/zsh-syntax-highlighting.git /usr/share/zsh-syntax-highlighting
 rm -rf /usr/share/zsh-syntax-highlighting/.git
 
+# Claude Code, installed natively as the agent rather than globally with npm. An npm -g install lands in a
+# root-owned tree, which is why `claude update` fails in a box with "Insufficient permissions"; the native install
+# lives in /home/agent/.local, which the agent owns and which Docker seeds into the home volume. The shim stands
+# in for ~/.local/bin, which is not on PATH.
+su agent -s /bin/bash -c 'export HOME=/home/agent; curl -fsSL https://claude.ai/install.sh | bash'
+install -m 755 "$HERE/claude" /usr/local/bin/claude
+# ~/.local/bin on the interactive PATH too: the shim covers scripts and `docker exec`, but claude checks the PATH
+# itself and warns when it is missing, and anything else the agent installs for itself lands there as well.
+# The system rc file, not ~/.zshrc, which belongs to the human's home overlay.
+printf '\n# agentbox: the agent installs its own tools here (Claude Code among them)\n%s\n' \
+  'case ":$PATH:" in *:"$HOME/.local/bin":*) ;; *) PATH="$HOME/.local/bin:$PATH" ;; esac' >> /etc/zsh/zshrc
 install -m 755 "$HERE/gh" /usr/local/bin/gh
 install -m 755 "$HERE/pbcopy" /usr/local/bin/pbcopy
 install -m 755 "$HERE/open" /usr/local/bin/open
