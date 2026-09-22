@@ -8,12 +8,14 @@ import glob
 import json
 import mimetypes
 import os
+import re
 import shutil
 import signal
 import subprocess
 import time
 import urllib.error
 import urllib.request
+from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -170,9 +172,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def _panel(self):
         try:
-            self._send(200, PANEL_HTML.read_bytes(), "text/html; charset=utf-8")
+            page = PANEL_HTML.read_text(encoding="utf-8")
         except FileNotFoundError:
-            self._send(500, "panel.html is missing next to this server", "text/plain; charset=utf-8")
+            return self._send(500, "panel.html is missing next to this server", "text/plain; charset=utf-8")
+        # The tab is named after the agent, so several panels open at once stay apart.
+        page = re.sub(r"<title>.*?</title>", f"<title>{escape(AGENT_NAME)} panel</title>", page, count=1, flags=re.S)
+        self._send(200, page, "text/html; charset=utf-8")
 
     def _listing(self, directory):
         try:
@@ -189,7 +194,7 @@ class Handler(BaseHTTPRequestHandler):
         ) or "<li class=empty>empty</li>"
         html = (
             "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
-            "<title>out" + rel + "</title>"
+            "<title>" + escape(AGENT_NAME) + " out" + rel + "</title>"
             "<style>body{font:14px/1.6 system-ui,sans-serif;margin:2rem;max-width:40rem;background:#0b0d12;color:#e6e8ee}"
             "a{color:#8ab4ff}ul{list-style:none;padding:0}li{padding:.15rem 0}.empty{color:#7a8194}"
             ".top{color:#7a8194;margin-bottom:1rem}</style>"
