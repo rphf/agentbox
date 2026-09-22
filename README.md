@@ -158,7 +158,7 @@ is passed with `--env-file`.
 ~/.config/agentbox/
   env                    BOT_NAME, BOT_EMAIL, AGENT_SHELL, NET_LOG, all optional
   home/                  overlaid onto every agent's home
-  secrets/<project>/     mounted read-only at /run/secrets, falling back to secrets/
+  secrets/<project>/     mounted read-only at /run/secrets, falling back to secrets/_shared/
 ```
 
 `home/` is mounted read-only at `/agent-home` and overlaid onto `/home/agent` on every `up`: directories are

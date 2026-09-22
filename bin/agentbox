@@ -51,10 +51,13 @@ load_settings() {
   [ -n "${PROJECT:-}" ] || die "PROJECT is not set in $PROJECT_DIR/project.env"
   export REPO_ROOT AGENTBOX_RUNTIME_DIR="$HARNESS/runtime"
   IMAGE="agentbox-$PROJECT"
-  # Secrets are per project: a directory named after it wins, and a single shared one is the fallback.
+  # Secrets are per project: a directory named after it wins, and secrets/_shared is the fallback. Never mount
+  # secrets/ itself — it holds the per-project dirs, so every box would get every other project's token. The
+  # leading underscore cannot collide with a project: PROJECT is also a compose project name, which must start
+  # with a letter or a digit.
   AGENT_HOME_DIR="$CONFIG_DIR/home"
   GH_SECRETS_DIR="$CONFIG_DIR/secrets/$PROJECT"
-  [ -d "$GH_SECRETS_DIR" ] || GH_SECRETS_DIR="$CONFIG_DIR/secrets"
+  [ -d "$GH_SECRETS_DIR" ] || GH_SECRETS_DIR="$CONFIG_DIR/secrets/_shared"
   mkdir -p "$AGENT_HOME_DIR" "$GH_SECRETS_DIR"
   # Resolved, because either may be a symlink into a dotfiles repo and Docker needs the real path to mount.
   AGENT_HOME_DIR="$(cd "$AGENT_HOME_DIR" && pwd -P)"
