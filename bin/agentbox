@@ -13,6 +13,7 @@
 #   agentbox open N [PORT_NAME]     open one of them in your browser (default: the first port)
 #   agentbox panel N                open agent N's control panel: app start/stop, review server, outbox
 #   agentbox get N [file]           copy agent N's ~/out to ./tmp/agentbox/agent-N/ on the host
+#   agentbox clean N                empty agent N's ~/out and put its checkout back on REPO_BRANCH
 #   agentbox review N [diff args]   open agent N's live diff in your browser (default: its uncommitted changes)
 #   agentbox compose N [args]       run docker compose for agent N (logs db, config, exec agent ...)
 #
@@ -26,7 +27,7 @@ CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/agentbox"
 PERSONAL_ENV="$CONFIG_DIR/env"
 
 die() { echo "agentbox: $*" >&2; exit 1; }
-usage() { sed -n '2,20p' "$0"; exit 1; }
+usage() { sed -n '2,21p' "$0"; exit 1; }
 
 # ── settings ──────────────────────────────────────────────────────────────────────────────────────────────
 find_repo() {   # walk up from $1 to the first directory holding .agentbox/project.env
@@ -206,6 +207,35 @@ cmd_review() {
   browse "$url"
 }
 
+cmd_clean() {
+  # Between two pieces of work in the same agent: empty the outbox and go back to the project branch. What the
+  # agent produced is listed before it goes, because a bundle handed back there is sometimes the only copy.
+  # A dirty tree is left alone; commit or discard it yourself, then run this again.
+  local n=${1:?usage: agentbox clean N}
+  load_settings; agent_env "$n"
+  compose exec -T agent bash -c '
+    cd /workspace
+    out="$HOME/out"; branch="${REPO_BRANCH:-main}"
+    if [ -n "$(ls -A "$out" 2>/dev/null)" ]; then
+      echo "removing from ~/out:"; (cd "$out" && ls -A | sed "s/^/  /")
+      rm -rf "$out"/* "$out"/.[!.]* 2>/dev/null
+    else
+      echo "~/out is already empty"
+    fi
+    mkdir -p "$out"
+    if [ -n "$(git status --porcelain)" ]; then
+      echo "workspace: uncommitted changes, staying on $(git rev-parse --abbrev-ref HEAD)"
+      git status --short | head -10
+    elif git checkout --quiet "$branch" 2>/dev/null; then
+      git pull --ff-only --quiet 2>/dev/null \
+        && echo "workspace: on $branch, up to date" \
+        || echo "workspace: on $branch (not pulled)"
+    else
+      echo "workspace: could not switch to $branch, still on $(git rev-parse --abbrev-ref HEAD)"
+    fi
+  '
+}
+
 cmd_get() {
   local n=${1:?usage: agentbox get N [file]} file=${2:-.} dest container
   load_settings; agent_env "$n"
@@ -239,6 +269,7 @@ case "$cmd" in
   ps) cmd_ps ;;
   compose) cmd_compose "$@" ;;
   get) cmd_get "$@" ;;
+  clean) cmd_clean "$@" ;;
   url) cmd_url "$@" ;;
   open) cmd_open "$@" ;;
   panel) cmd_panel "$@" ;;
