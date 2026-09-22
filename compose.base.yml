@@ -31,7 +31,6 @@ services:
       - home:/home/agent
       - ${GH_SECRETS_DIR}:/run/secrets:ro      # gh-token minted on the host; an empty dir when unset
       - ${AGENT_HOME_DIR}:/agent-home:ro       # overlaid onto /home/agent by the bootstrap; empty dir when unset
-      - ${REPO_ROOT}:/host-repo:ro             # the checkout agentbox runs from; cloned into /workspace
       - ${AGENTBOX_RUNTIME_DIR}:/agentbox:ro   # harness scripts run at `up` (bootstrap); edits need no rebuild
     restart: unless-stopped
 

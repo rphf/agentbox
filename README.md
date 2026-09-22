@@ -54,7 +54,7 @@ one-shot services that ran to completion. Names: compose project `<project>-agen
 | Layer | Lives in | Contains |
 | --- | --- | --- |
 | Harness | this repo | `bin/agentbox`, `compose.base.yml`, `image/`, `runtime/bootstrap`, `env.example` |
-| Project | `<repo>/.agentbox/` | `project.env`, `Dockerfile`, `compose.yml`, `bootstrap`, `app`, `AGENT.md`, optional `setup` and `.env` |
+| Project | `<repo>/.agentbox/` | `project.env`, `Dockerfile`, `compose.yml`, `bootstrap`, `app`, `AGENT.md`, optional `host-files`, `setup` and `.env` |
 | Personal | `~/.config/agentbox/` | `env`, `home/`, `secrets/<project>/` |
 
 Three stock Docker features glue them together, no templating:
@@ -145,10 +145,26 @@ Four things there are worth copying:
 - **An image's own `VOLUME`** needs a `tmpfs` when you do not mount it, or every recreate leaves an anonymous
   volume behind.
 
+### `host-files`
+
+`/workspace` is always cloned from `REPO_URL`, so a box needs nothing from your disk and could run on another
+machine. The few files a clone cannot carry — gitignored env files, a local `.mcp.json` — are listed here, one
+`<path in your checkout> [path in /workspace]` per line, `#` for comments:
+
+```
+.env
+frontend/.env.local
+.agentbox/mcp.json          .mcp.json
+```
+
+`up` streams each one in after the harness bootstrap and before the project `bootstrap`, skipping any whose
+destination already exists, so the agent's own edits survive. Nothing else crosses over and your checkout is never
+mounted. A project whose gitignored files are all optional needs no `host-files` at all.
+
 ### `bootstrap`, `app`, `setup`, `AGENT.md`, `.env`
 
-`bootstrap` is idempotent and runs as `agent` in `/workspace` on every `up`, after the clone; the host checkout is
-at `/host-repo` read-only for copying untracked env files. `app` is copied to `/usr/local/bin/app` with the
+`bootstrap` is idempotent and runs as `agent` in `/workspace` on every `up`, after the clone and the
+`host-files` copy. `app` is copied to `/usr/local/bin/app` with the
 convention `start | stop | status | logs [name] | url`. `setup` runs on the host to prepare shared volumes once.
 `AGENT.md` is the brief agents read, imported automatically. `.env` holds gitignored secrets the overlay needs and
 is passed with `--env-file`.
@@ -169,7 +185,8 @@ to one repo.
 
 ## What an agent gets
 
-- `/workspace` cloned from the host checkout, a persistent `$HOME`, and the project's services
+- `/workspace` cloned from `REPO_URL`, plus whatever `host-files` lists, a persistent `$HOME`, and the project's
+  services
 - hostname `agentN.localhost` and the ports from `PORTS`, identical inside and outside
 - `~/AGENTBOX.md`, written per agent, saying where it is and how to hand work back, importing the project's
   `AGENT.md`

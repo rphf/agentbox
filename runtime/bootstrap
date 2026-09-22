@@ -1,22 +1,19 @@
 #!/usr/bin/env bash
 # /agentbox/bootstrap — run as `agent` by `agentbox up` from the read-only runtime mount, on every `up`. Idempotent.
 # Editing this file needs no image rebuild.
-# 1. clone the project into /workspace: from the host checkout when it is mounted, else from REPO_URL
+# 1. clone the project into /workspace from REPO_URL
 # 2. overlay /agent-home (your agent config, real files) onto $HOME
-# 3. hand over to the project's own bootstrap (agentbox-project-bootstrap) when the image has one
+# 3. write ~/AGENTBOX.md and start the control panel
+# `agentbox up` runs this, then copies the project's host-files in, then runs agentbox-project-bootstrap. The
+# host checkout is not mounted, so only the CLI can put host files here — which is what lets a box run elsewhere.
 set -euo pipefail
 cd /workspace
 
 if [ ! -d .git ]; then
-  if [ -d /host-repo/.git ]; then
-    echo "── cloning from host checkout"   # no GitHub access needed, and the object store is local
-    git clone --quiet /host-repo .
-    git remote set-url origin "$REPO_URL"
-  else
-    echo "── cloning $REPO_URL"
-    git clone --quiet "$REPO_URL" .
-  fi
-  git checkout --quiet "${REPO_BRANCH:-main}" 2>/dev/null || true
+  echo "── cloning $REPO_URL"
+  git clone --quiet "$REPO_URL" .
+  git checkout --quiet "${REPO_BRANCH:-main}" 2>/dev/null \
+    || echo "   no branch ${REPO_BRANCH:-main} on the remote; staying on $(git branch --show-current)"
 fi
 
 # Install the co-author hook into this clone (every up, idempotent). A project with its own core.hooksPath
@@ -144,7 +141,8 @@ one stands. Every branch has to live in this repository; a stack cannot cross a 
 
 ## What is around you
 
-- \`/workspace\` is your own clone. The human's checkout is mounted read-only at \`/host-repo\`; never write there.
+- \`/workspace\` is your own clone of \`$REPO_URL\`. The human's checkout is not on this machine and you cannot
+  reach it. Config the clone cannot carry, such as env files, was copied in for you when this sandbox started.
 - \`$HOME\` persists across restarts of this sandbox. \`/workspace\` too.
 - Your hostname is \`${AGENT_HOST}\` and it resolves both here and in the human's browser, so a URL you see works
   for them unchanged. Prefer it over \`localhost\` when you report a link.
@@ -166,7 +164,3 @@ if [ -n "${OUT_PORT:-}" ] && ! ss -ltnH "sport = :$OUT_PORT" 2>/dev/null | grep 
   disown 2>/dev/null || true
 fi
 
-if command -v agentbox-project-bootstrap >/dev/null; then
-  echo "── project bootstrap"
-  exec agentbox-project-bootstrap
-fi

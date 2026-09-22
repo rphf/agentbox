@@ -121,9 +121,35 @@ cmd_up() {
   # Hostname log, before the bootstrap so its downloads are logged too.
   if [ "${NET_LOG:-1}" = 1 ]; then compose exec -T agent sudo /usr/local/bin/net-log start; fi
   compose exec -T agent /agentbox/bootstrap
+  copy_host_files
+  compose exec -T agent sh -c \
+    'command -v agentbox-project-bootstrap >/dev/null || exit 0; echo "── project bootstrap"; exec agentbox-project-bootstrap'
   remove_completed_containers
   echo
   echo "$COMPOSE_PROJECT is up.  shell: agentbox sh $n   host: $AGENT_HOST   ${PORTS_EXPANDED:-}"
+}
+
+# The few files the human's checkout holds and a clone cannot: gitignored env files, a local .mcp.json. The
+# project lists them in .agentbox/host-files, one `<path in the checkout> [path in /workspace]` per line; nothing
+# else crosses over and the checkout is never mounted, so a box can sit on another machine — a bind mount is
+# resolved by the Docker daemon, this stream by the client. Only a missing destination is written, so whatever
+# the agent changed afterwards survives the next up.
+copy_host_files() {
+  local manifest="$PROJECT_DIR/host-files" src dest
+  [ -f "$manifest" ] || return 0
+  # fd 3, because the copy below hands the agent its stdin and would otherwise swallow the rest of the manifest.
+  while read -r src dest _ <&3 || [ -n "${src:-}" ]; do
+    case "${src:-#}" in '#'*) continue ;; esac
+    : "${dest:=$src}"
+    if [ ! -f "$REPO_ROOT/$src" ]; then
+      echo "── host-files: no $src in the checkout, skipped"
+      continue
+    fi
+    if compose exec -T agent test -e "/workspace/$dest" </dev/null 2>/dev/null; then continue; fi
+    compose exec -T agent sh -c 'mkdir -p "$(dirname "/workspace/$1")" && cat > "/workspace/$1"' _ "$dest" \
+      < "$REPO_ROOT/$src" || die "host-files: could not write /workspace/$dest in agent $AGENT"
+    echo "── host-files: $src → $dest"
+  done 3< "$manifest"
 }
 
 remove_completed_containers() {
