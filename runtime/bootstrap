@@ -25,6 +25,24 @@ if [ -d .git ] && [ -f /agentbox/git-hooks/prepare-commit-msg ]; then
   install -m 755 /agentbox/git-hooks/prepare-commit-msg "$(git rev-parse --git-path hooks)/prepare-commit-msg"
 fi
 
+# gh reads extensions from $HOME only, and the home is a volume, so an extension baked into the image would never
+# reach an agent created before it. Link the image's copies in on every up. Before the overlay, so a personal
+# version of the same extension in ~/.config/agentbox/home wins.
+if [ -d /usr/local/share/gh/extensions ]; then
+  for ext in /usr/local/share/gh/extensions/*/; do
+    [ -d "$ext" ] || continue
+    dest="$HOME/.local/share/gh/extensions/$(basename "$ext")"
+    # A real directory holding links, not a link to one: gh reads manifest.yml — the owner and version that
+    # `gh extension list` prints — only when the extension directory itself is real.
+    if [ -L "$dest" ]; then rm -f "$dest"; fi
+    mkdir -p "$dest"
+    for file in "$ext"*; do
+      [ -e "$file" ] || continue
+      ln -sfn "$file" "$dest/$(basename "$file")"
+    done
+  done
+fi
+
 # Home overlay: a directory in the overlay is merged into the same directory of the home (created when missing),
 # so per-agent state next to it survives; a file is linked in place, so it follows the overlay live and the agent
 # cannot alter it. Links left behind by files removed from the overlay are dropped first.
@@ -118,6 +136,11 @@ git bundle create "\$HOME/out/\$(git branch --show-current).bundle" ${REPO_BRANC
 \`\`\`
 
 The human fetches that bundle and pushes it themselves.
+
+When a change is too big to read as one diff, stack it: \`gh stack\` splits it into a chain of pull requests that
+each target the one below, so each layer is reviewed on its own. \`gh stack add -Am "message"\` starts the next
+layer, \`gh stack submit\` pushes the chain and opens the pull requests, and \`gh stack\` alone shows where each
+one stands. Every branch has to live in this repository; a stack cannot cross a fork.
 
 ## What is around you
 

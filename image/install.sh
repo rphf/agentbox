@@ -2,9 +2,9 @@
 # agentbox generic image layer. A project Dockerfile runs it as root, on a Debian bookworm based image:
 #   RUN --mount=type=bind,from=agentbox,target=/agentbox /agentbox/install.sh
 # It installs: user `agent` (uid 1000) with /workspace, Node (only when the image has none), Claude Code,
-# Playwright MCP with Chromium and WebKit under /opt/ms-playwright, gh, lazygit, delta, revue, tmux, dnsmasq, socat,
-# the net-log and gh scripts, git and sudo settings for the bot identity. The harness bootstrap is not baked in:
-# compose mounts <harness>/runtime at /agentbox and `agentbox up` runs it from there.
+# Playwright MCP with Chromium and WebKit under /opt/ms-playwright, gh and the gh-stack extension, lazygit, delta,
+# revue, tmux, dnsmasq, socat, the net-log and gh scripts, git and sudo settings for the bot identity. The harness
+# bootstrap is not baked in: compose mounts <harness>/runtime at /agentbox and `agentbox up` runs it from there.
 # Build ARGs it honours when declared before the RUN line: PLAYWRIGHT_MCP_VERSION (default latest), NODE_VERSION,
 # REVUE_VERSION (default latest; a pin also rebuilds this layer, which is how a newer latest gets picked up).
 set -euo pipefail
@@ -14,6 +14,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 : "${NODE_VERSION:=24.15.0}"
 : "${LAZYGIT_VERSION:=0.65.1}"
 : "${DELTA_VERSION:=0.19.2}"
+: "${GH_STACK_VERSION:=0.1.1}"
 : "${ZSH_SYNTAX_HIGHLIGHTING_VERSION:=0.8.0}"
 export DEBIAN_FRONTEND=noninteractive
 
@@ -45,6 +46,24 @@ case "$REVUE_VERSION" in
   *)      revue_url="https://github.com/rphf/revue/releases/download/v${REVUE_VERSION}/revue_linux_${arch}.tar.gz" ;;
 esac
 curl -fsSL "$revue_url" | tar -xz -C /usr/local/bin revue
+
+# gh-stack: GitHub's stacked pull requests, so a big change lands as a chain of small reviewable PRs. gh loads
+# extensions from the user's data directory only, and /home/agent is a volume, so an image rebuild alone would
+# never reach an agent that already exists. Keep the binary here; the harness bootstrap links it into $HOME.
+gh_stack_dir=/usr/local/share/gh/extensions/gh-stack
+install -d "$gh_stack_dir"
+curl -fsSL "https://github.com/github/gh-stack/releases/download/v${GH_STACK_VERSION}/linux-${arch}" \
+  -o "$gh_stack_dir/gh-stack"
+chmod 755 "$gh_stack_dir/gh-stack"
+# Without a manifest gh still runs the extension, but `gh extension list` shows it with no origin or version.
+cat > "$gh_stack_dir/manifest.yml" <<EOF
+owner: github
+name: gh-stack
+host: github.com
+tag: v${GH_STACK_VERSION}
+ispinned: true
+path: $gh_stack_dir/gh-stack
+EOF
 
 if ! command -v node >/dev/null; then
   arch="$(dpkg --print-architecture)"

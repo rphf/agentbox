@@ -98,7 +98,8 @@ WORKDIR /workspace
 CMD ["sleep", "infinity"]
 ```
 
-`install.sh` adds user `agent` (uid 1000), Claude Code, Playwright MCP with Chromium and WebKit, `gh`, zsh, tmux,
+`install.sh` adds user `agent` (uid 1000), Claude Code, Playwright MCP with Chromium and WebKit, `gh` and its
+`gh-stack` extension for stacked pull requests, zsh, tmux,
 lazygit, delta, revue (latest release), dnsmasq, socat, the `net-log`, `gh`, `pbcopy` and `open` shims, and the git credential helper for
 `/run/secrets/gh-token`. Any directory the project mounts a volume on must exist in the image and belong to
 `agent`: Docker copies a mount point's ownership into an empty volume on first mount, which is all the ownership
