@@ -10,10 +10,42 @@ set -euo pipefail
 cd /workspace
 
 if [ ! -d .git ]; then
-  echo "── cloning $REPO_URL"
-  git clone --quiet "$REPO_URL" .
-  git checkout --quiet "${REPO_BRANCH:-main}" 2>/dev/null \
-    || echo "   no branch ${REPO_BRANCH:-main} on the remote; staying on $(git branch --show-current)"
+  branch="${REPO_BRANCH:-main}"
+  # Ask the remote first. It is the one step that needs the remote to accept us, and a GitHub App installation
+  # token lasts an hour, so this is where a box meets a stale one. Minting is the host's business, not the
+  # harness's: say what is wrong and where, rather than leaving the human with git's "Authentication failed".
+  # GIT_TERMINAL_PROMPT=0, or git asks for a password and `up` gives it no terminal to answer on.
+  if ! heads="$(GIT_TERMINAL_PROMPT=0 git ls-remote --quiet --heads "$REPO_URL" 2>&1)"; then
+    {
+      echo
+      echo "agentbox: cannot read $REPO_URL."
+      if [ -s /run/secrets/gh-token ]; then
+        echo "  A token is mounted at /run/secrets/gh-token. If that remote is private, it has most likely"
+        echo "  expired: an installation token is valid for one hour."
+      else
+        echo "  No token is mounted at /run/secrets/gh-token, so only a public remote can work here."
+      fi
+      echo "  Mint a fresh one on the host into the directory agentbox mounts there —"
+      echo "  ~/.config/agentbox/secrets/<project>/gh-token, or secrets/_shared/gh-token — then run:"
+      echo "      agentbox up ${AGENT:-N}"
+      echo
+      printf '%s\n' "$heads" | sed 's/^/  /'
+    } >&2
+    exit 1
+  fi
+
+  # One branch, not all of them: a long-lived repository can carry thousands, and the agent starts from this one.
+  # History is complete, so log, blame and merge-base all work — it is the other branches that are left behind.
+  if printf '%s\n' "$heads" | awk -v b="refs/heads/$branch" '$2==b{f=1} END{exit !f}'; then
+    echo "── cloning $REPO_URL ($branch only)"
+    git clone --quiet --single-branch --branch "$branch" "$REPO_URL" .
+  else
+    echo "── cloning $REPO_URL (no branch $branch on the remote, taking its default)"
+    git clone --quiet --single-branch "$REPO_URL" .
+  fi
+  # Put the normal refspec back. Nothing is fetched now, but `git fetch origin <branch>` then behaves as usual
+  # when the agent needs another branch — a stack to rebase on, a colleague's work to review.
+  git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
 fi
 
 # Install the co-author hook into this clone (every up, idempotent). A project with its own core.hooksPath
