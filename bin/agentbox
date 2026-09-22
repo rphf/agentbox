@@ -68,7 +68,9 @@ load_settings() {
 agent_env() {   # per-agent values, exported for compose interpolation
   local n=$1 kv val
   [[ "$n" =~ ^[0-9]+$ ]] || die "agent number expected, got '$n'"
-  export AGENT="$n" AGENT_HOST="agent${n}.localhost"
+  # One label before .localhost, not agentN.<project>.localhost: Rails' host authorization allows a single
+  # subdomain under a permitted domain, so a second dot makes every page 403 with "Blocked hosts".
+  export AGENT="$n" AGENT_HOST="agent${n}-${PROJECT}.localhost"
   COMPOSE_PROJECT="$PROJECT-agent-$n"
   PORTS_EXPANDED=""
   for kv in ${PORTS:-}; do   # APP_PORT=3N00 → APP_PORT=3100 for agent 1
