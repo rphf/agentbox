@@ -116,6 +116,11 @@ before = json.dumps(state, sort_keys=True)
 state.setdefault("hasCompletedOnboarding", True)
 state.setdefault("hasSeenAutoModeOutsideReadPrompt", True)
 state.setdefault("projects", {}).setdefault("/workspace", {})["hasTrustDialogAccepted"] = True
+#TODO: Consider a comment here
+if os.access(os.path.expanduser("~/.local/bin/claude"), os.X_OK) and state.get("installMethod") != "native":
+    state["installMethod"] = "native"
+    if state.get("autoUpdates") is False:
+        del state["autoUpdates"]
 if json.dumps(state, sort_keys=True) != before:
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path))
     with os.fdopen(fd, "w") as fh:
