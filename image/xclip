@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+#TODO: Consider a comment here
+set -euo pipefail
+store=/tmp/agentbox-clipboard
+mode=in target="" filter=0 files=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -i|-in) mode=in ;;
+    -o|-out) mode=out ;;
+    -t|-target) target="${2:?-target needs a value}"; shift ;;
+    -se|-sel|-selection|-d|-display|-l|-loops) shift ;;
+    -f|-filter) filter=1 ;;
+    -*) ;;
+    *) files+=("$1") ;;
+  esac
+  shift
+done
+
+is_text() { case "$1" in ""|text/*|UTF8_STRING|STRING|TEXT) return 0 ;; *) return 1 ;; esac; }
+
+if [ "$mode" = out ]; then
+  [ -f "$store/content" ] || { echo "Error: target ${target:-STRING} not available" >&2; exit 1; }
+  stored="$(cat "$store/type")"
+  if [ "$target" = TARGETS ]; then
+    printf 'TARGETS\n%s\n' "$stored"
+    if is_text "$stored"; then printf 'UTF8_STRING\nSTRING\n'; fi
+    exit 0
+  fi
+  if [ "$target" = "$stored" ] || { is_text "$target" && is_text "$stored"; }; then
+    exec cat "$store/content"
+  fi
+  echo "Error: target ${target:-STRING} not available" >&2
+  exit 1
+fi
+
+umask 077
+mkdir -p "$store"
+if [ ${#files[@]} -gt 0 ]; then cat -- "${files[@]}"; else cat; fi > "$store/content.new"
+if is_text "$target"; then type=text/plain; else type="$target"; fi
+printf '%s' "$type" > "$store/type.new"
+mv "$store/content.new" "$store/content"
+mv "$store/type.new" "$store/type"
+if [ "$filter" = 1 ]; then cat "$store/content"; fi
+
+if ! is_text "$type"; then
+  echo "xclip: $type kept in this box's clipboard; only text reaches the clipboard of your own machine" >&2
+elif { : > /dev/tty; } 2>/dev/null; then
+  pbcopy < "$store/content"
+fi

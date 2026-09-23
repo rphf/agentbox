@@ -102,7 +102,7 @@ CMD ["sleep", "infinity"]
 `npm -g`, so `claude update` can write to it; `/usr/local/bin/claude` is a shim standing in for `~/.local/bin`,
 which is not on PATH), Playwright MCP with Chromium and WebKit, `gh` and its
 `gh-stack` extension for stacked pull requests, zsh, tmux,
-lazygit, delta, revue (latest release), dnsmasq, socat, the `net-log`, `gh`, `pbcopy` and `open` shims, and the git credential helper for
+lazygit, delta, revue (latest release), dnsmasq, socat, the `net-log`, `gh`, `pbcopy`, `xclip` and `open` shims, and the git credential helper for
 `/run/secrets/gh-token`. Any directory the project mounts a volume on must exist in the image and belong to
 `agent`: Docker copies a mount point's ownership into an empty volume on first mount, which is all the ownership
 handling there is.
@@ -201,6 +201,8 @@ to one repo.
   the server
 - Claude Code with your config, no permission prompts, the workspace pre-trusted
 - `pbcopy` and `open`, which reach your clipboard and your browser through terminal escape sequences, over ssh too
+- `xclip`, a clipboard of the box's own. Text copied into it (lazygit's copy commands, anything that calls
+  `xclip`) also goes to your clipboard like `pbcopy`. Nothing in the box can read your clipboard
 - `net-log hosts`, every hostname it reached
 
 ## Troubleshooting
@@ -210,6 +212,8 @@ to one repo.
 | `no .agentbox/project.env found above …` | Not inside a project checkout. Use `-C <repo>`. |
 | `external volume "…" not found` | The project's `setup` has not run. |
 | A change to the project `bootstrap` or `app` has no effect | They are baked in: `agentbox build`, then `up`. |
+| lazygit says `No clipboard utilities available` | The image predates the `xclip` shim: `agentbox build`, then `up`. |
+| Copy in the box reaches nothing | Your terminal does not accept OSC 52, or tmux sits between: `set -g set-clipboard on`. |
 | Want to see what Compose actually runs | `agentbox compose N config` |
 | Logging in to an MCP server opens a link, and the browser says it cannot connect to `localhost:<port>` | The OAuth callback listens inside the box, on a random port nobody published. Use `claude mcp login <server> --no-browser`, below. |
 

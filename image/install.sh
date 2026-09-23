@@ -3,7 +3,7 @@
 #   RUN --mount=type=bind,from=agentbox,target=/agentbox /agentbox/install.sh
 # It installs: user `agent` (uid 1000) with /workspace, Node (only when the image has none), Claude Code,
 # Playwright MCP with Chromium and WebKit under /opt/ms-playwright, gh and the gh-stack extension, lazygit, delta,
-# revue, tmux, dnsmasq, socat, the net-log and gh scripts, git and sudo settings for the bot identity. The harness
+# revue, tmux, dnsmasq, socat, the net-log, gh, pbcopy, xclip and open scripts, git and sudo settings for the bot identity. The harness
 # bootstrap is not baked in: compose mounts <harness>/runtime at /agentbox and `agentbox up` runs it from there.
 # Build ARGs it honours when declared before the RUN line: PLAYWRIGHT_MCP_VERSION (default latest), NODE_VERSION,
 # REVUE_VERSION (default latest; a pin also rebuilds this layer, which is how a newer latest gets picked up).
@@ -115,6 +115,7 @@ printf '\n# agentbox: the agent installs its own tools here (Claude Code among t
   'case ":$PATH:" in *:"$HOME/.local/bin":*) ;; *) PATH="$HOME/.local/bin:$PATH" ;; esac' >> /etc/zsh/zshrc
 install -m 755 "$HERE/gh" /usr/local/bin/gh
 install -m 755 "$HERE/pbcopy" /usr/local/bin/pbcopy
+install -m 755 "$HERE/xclip" /usr/local/bin/xclip
 install -m 755 "$HERE/open" /usr/local/bin/open
 ln -sf /usr/local/bin/pbcopy /usr/local/bin/clip
 ln -sf /usr/local/bin/open /usr/local/bin/xdg-open
