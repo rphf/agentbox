@@ -175,7 +175,7 @@ is passed with `--env-file`.
 
 ```
 ~/.config/agentbox/
-  env                    BOT_NAME, BOT_EMAIL, AGENT_SHELL, NET_LOG, all optional
+  env                    BOT_NAME, BOT_EMAIL, AGENT_SHELL, NET_LOG, AGENT_MEM_LIMIT, all optional
   home/                  overlaid onto every agent's home
   secrets/<project>/     mounted read-only at /run/secrets, falling back to secrets/_shared/
 ```
