@@ -89,12 +89,12 @@ git config --system credential.https://github.com.helper \
 git config --system --add safe.directory '*'
 git config --system init.defaultBranch main
 
-# Non-root user, uid 1000 to match the volume chown done by `agentbox up`; may only sudo net-log.
+# Non-root user, uid 1000 to match the volume chown done by `agentbox up`; passwordless sudo, the container is the boundary.
 if existing="$(getent passwd 1000 | cut -d: -f1)" && [ -n "$existing" ] && [ "$existing" != agent ]; then
   echo "uid 1000 is already taken by '$existing' in the base image" >&2; exit 1
 fi
 id agent >/dev/null 2>&1 || useradd -m -u 1000 -s /bin/bash agent
-echo "agent ALL=(root) NOPASSWD: /usr/local/bin/net-log" > /etc/sudoers.d/agent
+echo "agent ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/agent
 chmod 0440 /etc/sudoers.d/agent
 mkdir -p /workspace && chown agent:agent /workspace
 

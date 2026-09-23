@@ -99,7 +99,7 @@ WORKDIR /workspace
 CMD ["sleep", "infinity"]
 ```
 
-`install.sh` adds user `agent` (uid 1000), Claude Code (installed natively into `/home/agent/.local`, not with
+`install.sh` adds user `agent` (uid 1000, passwordless sudo), Claude Code (installed natively into `/home/agent/.local`, not with
 `npm -g`, so `claude update` can write to it; `/usr/local/bin/claude` is a shim standing in for `~/.local/bin`,
 which is not on PATH), Playwright MCP with Chromium and WebKit, `gh` and its
 `gh-stack` extension for stacked pull requests, zsh, tmux,
@@ -183,8 +183,9 @@ is passed with `--env-file`.
 
 `home/` is mounted read-only at `/agent-home` and overlaid onto `/home/agent` on every `up`: directories are
 merged so per-agent state such as `.claude/projects` stays local, files are linked so they follow your edits live
-and the agent cannot alter them. Secrets are per project because the identity they carry is: a GitHub App belongs
-to one repo.
+and the agent cannot alter them. To grow it from an agent's work, have the agent write new skills and rules under
+`~/out/home`, laid out like `home/`, then `agentbox get N home` and copy the ones you keep. Secrets are per
+project because the identity they carry is: a GitHub App belongs to one repo.
 
 ## What an agent gets
 
@@ -201,6 +202,7 @@ to one repo.
   protocol is in `~/AGENTBOX.md`. From here, `agentbox review N` opens that page and the panel starts or stops
   the server
 - Claude Code with your config, no permission prompts, the workspace pre-trusted
+- passwordless `sudo`, so it can install packages and change the system; the container is the boundary
 - `pbcopy` and `open`, which reach your clipboard and your browser through terminal escape sequences, over ssh too
 - `xclip`, a clipboard of the box's own. Text copied into it (lazygit's copy commands, anything that calls
   `xclip`) also goes to your clipboard like `pbcopy`. Nothing in the box can read your clipboard. An image
