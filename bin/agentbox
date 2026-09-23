@@ -13,6 +13,7 @@
 #   agentbox open N [PORT_NAME]     open one of them in your browser (default: the first port)
 #   agentbox panel N                open agent N's control panel: app start/stop, review server, outbox
 #   agentbox get N [file]           copy agent N's ~/out to ./tmp/agentbox/agent-N/ on the host
+#   agentbox clip N                 put the image on your clipboard on agent N's clipboard (terminal Ctrl+V binding)
 #   agentbox clean N                empty agent N's ~/out and put its checkout back on REPO_BRANCH
 #   agentbox review N [diff args]   open agent N's live diff in your browser (default: its uncommitted changes)
 #   agentbox compose N [args]       run docker compose for agent N (logs db, config, exec agent ...)
@@ -27,7 +28,7 @@ CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/agentbox"
 PERSONAL_ENV="$CONFIG_DIR/env"
 
 die() { echo "agentbox: $*" >&2; exit 1; }
-usage() { sed -n '2,21p' "$0"; exit 1; }
+usage() { sed -n '2,22p' "$0"; exit 1; }
 
 # ── settings ──────────────────────────────────────────────────────────────────────────────────────────────
 find_repo() {   # walk up from $1 to the first directory holding .agentbox/project.env
@@ -274,6 +275,39 @@ cmd_get() {
   ls -la "$dest"
 }
 
+host_clipboard_png() {
+  case "$(uname -s)" in
+    Darwin)
+      osascript -e 'on run argv' \
+        -e 'set fp to open for access (POSIX file (item 1 of argv)) with write permission' \
+        -e 'set eof fp to 0' -e 'write (the clipboard as «class PNGf») to fp' -e 'close access fp' \
+        -e 'end run' "$1" >/dev/null 2>&1 ;;
+    *) wl-paste --type image/png > "$1" 2>/dev/null || xclip -selection clipboard -t image/png -o > "$1" 2>/dev/null ;;
+  esac
+  [ -s "$1" ]
+}
+
+cmd_clip() {
+  local n=${1:?usage: agentbox clip N} project container tmp
+  [[ "$n" =~ ^[0-9]+$ ]] || die "agent number expected, got '$n'"
+  REPO_ROOT="$(find_repo "$START_DIR")" || die "no .agentbox/project.env found above $START_DIR (or use -C <repo>)"
+  project="$(set -a; [ -f "$PERSONAL_ENV" ] && . "$PERSONAL_ENV"; . "$REPO_ROOT/.agentbox/project.env"; echo "${PROJECT:-}")"
+  [ -n "$project" ] || die "PROJECT is not set in $REPO_ROOT/.agentbox/project.env"
+  container="$(docker ps -q --filter "label=com.docker.compose.project=$project-agent-$n" \
+                            --filter "label=com.docker.compose.service=agent")"
+  [ -n "$container" ] || die "agent $n is not running"
+  tmp="$(mktemp)"
+  if host_clipboard_png "$tmp"; then
+    docker exec -i "$container" xclip -selection clipboard -t image/png -i < "$tmp" >/dev/null 2>&1 \
+      || { rm -f "$tmp"; die "could not write agent $n's clipboard (an image built before xclip? run: agentbox build)"; }
+  else
+    docker exec "$container" sh -c \
+      'case "$(cat /tmp/agentbox-clipboard/type 2>/dev/null)" in image/*) rm -rf /tmp/agentbox-clipboard ;; esac' \
+      >/dev/null 2>&1 || true
+  fi
+  rm -f "$tmp"
+}
+
 # ── main ──────────────────────────────────────────────────────────────────────────────────────────────────
 START_DIR="$PWD"
 while [ $# -gt 0 ]; do
@@ -295,6 +329,7 @@ case "$cmd" in
   ps) cmd_ps ;;
   compose) cmd_compose "$@" ;;
   get) cmd_get "$@" ;;
+  clip) cmd_clip "$@" ;;
   clean) cmd_clean "$@" ;;
   url) cmd_url "$@" ;;
   open) cmd_open "$@" ;;

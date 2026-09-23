@@ -41,9 +41,12 @@ the first project's repository.
   (Claude Code enables Shift+Enter and the rest of its keyboard protocol only for a terminal it recognises), and
   `pbcopy` and `open` are escape sequences the terminal interprets. Every one of them keeps working through ssh to a remote
   host, and none of them gives the container a channel to the machine you are sitting at.
-- **The clipboard only crosses one way.** `xclip` in the box keeps its own clipboard, and text copied into it
-  goes out as OSC 52, which a terminal can only write. Nothing in the box can read yours: reading the host
+- **The clipboard only crosses when you push it.** `xclip` in the box keeps its own clipboard, and text copied
+  into it goes out as OSC 52, which a terminal can only write. Nothing reads yours: an image comes in when your
+  terminal's Ctrl+V binding runs `agentbox clip N` for the pane you are typing in, and never text. Reading the host
   clipboard on demand, by OSC 52 or a daemon, would hand the agent whatever you copied last, passwords included.
+  The binding lives in the terminal, not in a pty relay inside `agentbox sh`, so nothing sits between you and the
+  box; the price is one binding per terminal, and the harness ships WezTerm's (`host/wezterm.lua`).
 - **No interactive gates inside the box.** First-run trust and permission dialogs are pre-answered and the
   permission mode is `bypassPermissions`. A prompt an unattended agent cannot answer is a hang, and the container
   already is the boundary those prompts exist to protect.

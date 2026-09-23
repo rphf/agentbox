@@ -41,6 +41,7 @@ agentbox url N                  print this agent's URLs
 agentbox open N [PORT_NAME]     open one in your browser
 agentbox panel N                open agent N's control panel: app start/stop, review server, outbox
 agentbox get N [file]           copy agent N's outbox to ./tmp/agentbox/agent-N/
+agentbox clip N                 put the image on your clipboard on agent N's clipboard; your terminal's Ctrl+V runs it
 agentbox review N [diff args]   open agent N's live diff in your browser (default: its uncommitted changes)
 agentbox compose N [args]       docker compose for agent N: `compose 1 logs db`, `compose 1 config`
 ```
@@ -202,8 +203,27 @@ to one repo.
 - Claude Code with your config, no permission prompts, the workspace pre-trusted
 - `pbcopy` and `open`, which reach your clipboard and your browser through terminal escape sequences, over ssh too
 - `xclip`, a clipboard of the box's own. Text copied into it (lazygit's copy commands, anything that calls
-  `xclip`) also goes to your clipboard like `pbcopy`. Nothing in the box can read your clipboard
+  `xclip`) also goes to your clipboard like `pbcopy`. Nothing in the box can read your clipboard. An image
+  comes in through your terminal: bound to Ctrl+V, `agentbox clip N` puts the image on your clipboard on that
+  box's clipboard just before the key reaches the box, so Claude Code there pastes it as it does locally. See
+  [Pasting images](#pasting-images)
 - `net-log hosts`, every hostname it reached
+
+## Pasting images
+
+Claude Code in a box reads images from the box's own clipboard, which only `agentbox clip N` fills. Bind it to
+Ctrl+V in your terminal and pasting a screenshot into a box works as it does locally. For WezTerm, the harness
+ships the binding; add this before `return config` in your `wezterm.lua`:
+
+```lua
+local agentbox_ok, agentbox = pcall(dofile, "/path/to/agentbox/host/wezterm.lua")
+if agentbox_ok then agentbox.apply(config) end
+```
+
+On every Ctrl+V, WezTerm checks what the pane runs. In a pane running `agentbox sh N` it runs `agentbox clip N`
+(about 0.3 s, mostly reading your clipboard), then sends the key on; anywhere else it sends the key on straight
+away. It cannot see through tmux or ssh on your side of the pane. With no image on your clipboard, `clip` drops a
+stale image from the box, so Claude Code does not paste your last screenshot when you meant text.
 
 ## Troubleshooting
 
