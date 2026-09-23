@@ -127,29 +127,6 @@ if json.dumps(state, sort_keys=True) != before:
         json.dump(state, fh, indent=2)
     os.replace(tmp, path)
 PY
-review_section=""
-if [ -n "${REVUE_PORT:-}" ]; then
-  review_section="$(cat <<REVIEW
-## Getting your work reviewed
-
-The human reviews your changes in their browser with revue. The page follows /workspace live, so they see
-your edits as you save them; you talk to revue with the \`revue\` CLI from /workspace.
-
-1. Work on a branch and commit. Put screenshots and reports in \`$HOME/out\` (see above).
-2. When a piece of work is ready, run \`revue open --no-browser ${REPO_BRANCH:-main}...HEAD\` and put the
-   printed link in your final message. Then end your turn; nothing happens until the human has looked.
-3. When the human resumes you, run \`revue feedback\`. It holds every unresolved thread with the quoted
-   lines, and the note of the human's last send: it says whether to answer, to change something, or that
-   you are done. Keep the \`cursor\`; \`revue feedback --since <cursor>\` later shows only what is new.
-4. Answer a comment with \`revue reply --thread <id> -m "..."\`. Link evidence in \`$HOME/out\` by its http
-   URL; it renders inline.
-5. After code changes, commit. The human's page updates by itself; end your turn again with the same link.
-
-Never resolve threads yourself; only the human does. \`revue --help\` lists the rest.
-
-REVIEW
-)"$'\n'
-fi
 cat > "$HOME/AGENTBOX.md" <<EOF
 # This machine: an agentbox sandbox
 
@@ -167,7 +144,6 @@ Nothing here is precious except what you hand back, and nothing you do here reac
 - Name files so a list of them reads as a story: \`01-signin.png\`, \`02-dashboard-after-fix.png\`.
 - When you finish a piece of work, say where you put things and give the http URL, not just the path.
 
-${review_section}
 ## Git
 
 Commit in the container as usual. Pushing may fail because the bot token is not installed yet; when it does,
