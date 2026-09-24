@@ -185,7 +185,7 @@ is passed with `--env-file`.
 merged so per-agent state such as `.claude/projects` stays local, files are linked so they follow your edits live
 and the agent cannot alter them. To grow it from an agent's work, have the agent write new skills and rules under
 `~/out/home`, laid out like `home/`, then copy the ones you keep:
-`cp -R "$(agentbox get N home)/." ~/.config/agentbox/home/`. Secrets are per
+`d=$(agentbox get N home) && cp -R "$d/." ~/.config/agentbox/home/`. Secrets are per
 project because the identity they carry is: a GitHub App belongs to one repo.
 
 ## What an agent gets
