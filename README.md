@@ -40,7 +40,7 @@ agentbox ps                     list this project's agents
 agentbox url N                  print this agent's URLs
 agentbox open N [PORT_NAME]     open one in your browser
 agentbox panel N                open agent N's control panel: app start/stop, review server, outbox
-agentbox get N [file]           copy agent N's outbox to ./tmp/agentbox/agent-N/
+agentbox get N [file]           copy agent N's outbox to ./tmp/agentbox/agent-N/ and print the copy's path
 agentbox clip N                 put the image on your clipboard on agent N's clipboard; your terminal's Ctrl+V runs it
 agentbox review N [diff args]   open agent N's live diff in your browser (default: its uncommitted changes)
 agentbox compose N [args]       docker compose for agent N: `compose 1 logs db`, `compose 1 config`
@@ -184,7 +184,8 @@ is passed with `--env-file`.
 `home/` is mounted read-only at `/agent-home` and overlaid onto `/home/agent` on every `up`: directories are
 merged so per-agent state such as `.claude/projects` stays local, files are linked so they follow your edits live
 and the agent cannot alter them. To grow it from an agent's work, have the agent write new skills and rules under
-`~/out/home`, laid out like `home/`, then `agentbox get N home` and copy the ones you keep. Secrets are per
+`~/out/home`, laid out like `home/`, then copy the ones you keep:
+`cp -R "$(agentbox get N home)/." ~/.config/agentbox/home/`. Secrets are per
 project because the identity they carry is: a GitHub App belongs to one repo.
 
 ## What an agent gets

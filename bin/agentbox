@@ -12,7 +12,7 @@
 #   agentbox url N                  print this agent's URLs
 #   agentbox open N [PORT_NAME]     open one of them in your browser (default: the first port)
 #   agentbox panel N                open agent N's control panel: app start/stop, review server, outbox
-#   agentbox get N [file]           copy agent N's ~/out to ./tmp/agentbox/agent-N/ on the host
+#   agentbox get N [file]           copy agent N's ~/out to ./tmp/agentbox/agent-N/ on the host, print the copy's path
 #   agentbox clip N                 put the image on your clipboard on agent N's clipboard (terminal Ctrl+V binding)
 #   agentbox clean N                empty agent N's ~/out and put its checkout back on REPO_BRANCH
 #   agentbox review N [diff args]   open agent N's live diff in your browser (default: its uncommitted changes)
@@ -270,9 +270,9 @@ cmd_get() {
   [ -n "$container" ] || die "agent $n is not running"
   dest="$REPO_ROOT/tmp/agentbox/agent-$n"
   mkdir -p "$dest"
-  docker cp "$container:/home/agent/out/$file" "$dest/" || die "nothing at ~/out/$file in agent $n"
-  echo "$dest"
-  ls -la "$dest"
+  docker cp "$container:/home/agent/out/$file" "$dest/" >&2 || die "nothing at ~/out/$file in agent $n"
+  find "$dest/$(basename "$file")" -type f >&2
+  echo "$dest/$(basename "$file")"
 }
 
 host_clipboard_png() {
