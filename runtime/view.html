@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>outbox file</title>
+<link rel="icon" type="image/svg+xml" href="/logo.svg">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5.9.0/github-markdown.min.css">
+<style>
+  :root { color-scheme: light dark; --bg:#0b0d12; --card:#12161e; --line:#222835; --fg:#e6e8ee; --dim:#8891a4;
+          --link:#8ab4ff; --btn:#1c222d; --btnh:#28303d; --add:#3fb950; --del:#f85149; --hunk:#a371f7;
+          --addbg:rgba(63,185,80,.12); --delbg:rgba(248,81,73,.12);
+          --a0:#6e7681; --a1:#ff7b72; --a2:#3fb950; --a3:#d29922; --a4:#58a6ff; --a5:#bc8cff; --a6:#39c5cf; --a7:#b1bac4;
+          --mono:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f6f7f9; --card:#fff; --line:#e4e7ec; --fg:#1a1d24; --dim:#66707f; --link:#1a56db;
+            --btn:#f0f2f5; --btnh:#e4e8ee; --add:#1a7f37; --del:#cf222e; --hunk:#8250df;
+            --addbg:rgba(26,127,55,.1); --delbg:rgba(207,34,46,.1);
+            --a0:#57606a; --a1:#cf222e; --a2:#1a7f37; --a3:#9a6700; --a4:#0969da; --a5:#8250df; --a6:#1b7c83; --a7:#6e7781; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--fg); }
+  header { position:sticky; top:0; z-index:1; display:flex; align-items:center; gap:.7rem; flex-wrap:wrap;
+           padding:.6rem 1rem; background:var(--card); border-bottom:1px solid var(--line); }
+  header a.back { color:var(--dim); text-decoration:none; white-space:nowrap; }
+  header a.back:hover { color:var(--link); }
+  .name { font-family:var(--mono); font-size:.9rem; font-weight:600; min-width:0; overflow-wrap:anywhere; }
+  .meta { color:var(--dim); font-size:.8rem; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .actions { margin-left:auto; display:flex; gap:.4rem; }
+  .actions a, .actions button { font:inherit; font-size:.82rem; border:1px solid var(--line); background:var(--btn);
+         color:var(--fg); padding:.3rem .65rem; border-radius:7px; text-decoration:none; cursor:pointer; white-space:nowrap; }
+  .actions a:hover, .actions button:hover { background:var(--btnh); }
+  main { padding:1rem; }
+  .note { max-width:60rem; margin:0 auto 1rem; padding:.7rem .9rem; background:var(--card); border:1px solid var(--line);
+          border-radius:10px; font-size:.85rem; }
+  .note p { margin:.2rem 0 .5rem; }
+  .note code, .note pre { font-family:var(--mono); font-size:.8rem; }
+  .note pre { margin:0; padding:.5rem .7rem; background:var(--bg); border:1px solid var(--line); border-radius:7px;
+              overflow-x:auto; white-space:pre; }
+
+  pre.text { margin:0; font:12.5px/1.5 var(--mono); tab-size:4; white-space:pre-wrap; overflow-wrap:anywhere; }
+  body.nowrap pre.text { white-space:pre; overflow-x:auto; overflow-wrap:normal; }
+  pre.text .ln { display:block; }
+  pre.text .add { color:var(--add); background:var(--addbg); }
+  pre.text .del { color:var(--del); background:var(--delbg); }
+  pre.text .hunk { color:var(--hunk); }
+  pre.text .file { font-weight:700; }
+  .ansi-black-fg, .ansi-bright-black-fg { color:var(--a0); } .ansi-red-fg, .ansi-bright-red-fg { color:var(--a1); }
+  .ansi-green-fg, .ansi-bright-green-fg { color:var(--a2); } .ansi-yellow-fg, .ansi-bright-yellow-fg { color:var(--a3); }
+  .ansi-blue-fg, .ansi-bright-blue-fg { color:var(--a4); } .ansi-magenta-fg, .ansi-bright-magenta-fg { color:var(--a5); }
+  .ansi-cyan-fg, .ansi-bright-cyan-fg { color:var(--a6); } .ansi-white-fg, .ansi-bright-white-fg { color:var(--a7); }
+
+  /* Markdown gets GitHub's own stylesheet, on the page's background rather than on a card. */
+  article.markdown-body { max-width:1100px; margin:.5rem auto; background:transparent; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/18.0.14/lib/marked.umd.min.js"></script>
+</head>
+<body>
+<header>
+  <a class="back" href="/" title="panel">&larr; panel</a>
+  <span class="name" id="name"></span>
+  <span class="meta" id="meta"></span>
+  <div class="actions">
+    <button id="wrap" hidden>No wrap</button>
+    <a id="raw" target="_blank" rel="noopener">Raw</a>
+    <a id="download">Download</a>
+  </div>
+</header>
+<main id="main"></main>
+<script id="data" type="application/json">__DATA__</script>
+<script>
+  const f = JSON.parse(document.getElementById("data").textContent);
+  const $ = (id) => document.getElementById(id);
+  const main = $("main");
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  function size(n) {
+    if (n < 1024) return n + " B";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(n < 10240 ? 1 : 0) + " KB";
+    return (n / 1024 / 1024).toFixed(1) + " MB";
+  }
+
+  // A carriage return inside a line is a progress bar redrawing itself: keep only the last redraw. ansi_up then
+  // turns the colour escapes into classes, so the colours follow the page's light or dark palette.
+  async function ansi(text) {
+    text = text.split("\n").map((l) => l.replace(/\r+$/, "").split("\r").pop()).join("\n");
+    try {
+      const { AnsiUp } = await import("https://cdn.jsdelivr.net/npm/ansi_up@6.0.6/ansi_up.js");
+      const au = new AnsiUp();
+      au.use_classes = true;
+      return au.ansi_to_html(text);
+    } catch (e) {
+      return esc(text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, ""));
+    }
+  }
+
+  function diff(text) {
+    return text.split("\n").map((l) => {
+      const cls = /^(diff --git|index |\+\+\+ |--- )/.test(l) ? "file" : l.startsWith("@@") ? "hunk"
+        : l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : "";
+      return cls ? '<span class="ln ' + cls + '">' + esc(l) + "</span>" : esc(l);
+    }).join("\n");
+  }
+
+  function pre(html) {
+    $("wrap").hidden = false;
+    main.innerHTML = '<pre class="text">' + html + "</pre>";
+  }
+
+  document.title = f.name.split("/").pop();
+  $("name").textContent = f.name;
+  $("meta").textContent = size(f.size) + " · " + new Date(f.mtime * 1000).toLocaleString();
+  $("raw").href = f.url + "?raw";
+  $("download").href = f.url + "?download";
+  $("wrap").onclick = () => {
+    const off = document.body.classList.toggle("nowrap");
+    $("wrap").textContent = off ? "Wrap" : "No wrap";
+  };
+
+  if (f.kind === "markdown" && window.marked) {
+    main.innerHTML = '<article class="markdown-body">' + marked.parse(f.text) + "</article>";
+  } else if (f.kind === "json") {
+    let text = f.text;
+    try { text = JSON.stringify(JSON.parse(f.text), null, 2); } catch (e) { /* show it as written */ }
+    pre(esc(text));
+  } else if (f.kind === "diff") {
+    pre(diff(f.text));
+  } else {
+    ansi(f.text).then(pre);
+  }
+  if (f.note) main.insertAdjacentHTML("afterbegin", '<div class="note">' + f.note + "</div>");
+</script>
+</body>
+</html>

@@ -80,8 +80,9 @@ PORTS="APP_PORT=3N00 DEV_PORT=3N36 DB_PORT=3N32 OUT_PORT=3N90"
 
 Each entry in `PORTS` becomes a variable for compose interpolation with `N` replaced by the agent number, so
 agent 2 gets `APP_PORT=3200`. Two names are recognised by the harness. `OUT_PORT`: publish it and the agent's
-outbox is served there. `REVUE_PORT`: publish it and the agent's revue code-review server binds it, with
-`http://agentN.localhost:<port>` as the URL your browser uses. `agentbox review N` opens the box's working tree
+outbox is served there: a browser gets markdown rendered, logs in their colours, JSON indented and a summary of
+each git bundle, and `?raw` or `?download` gets the file as it is. `REVUE_PORT`: publish it and the agent's revue
+code-review server binds it, with `http://agentN.localhost:<port>` as the URL your browser uses. `agentbox review N` opens the box's working tree
 there, and the page follows it as the agent works; `agentbox panel N` starts and stops that server.
 
 ### `Dockerfile`

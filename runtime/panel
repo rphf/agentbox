@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # agentbox panel — the per-agent control page, served on OUT_PORT (the outbox port). It replaces the plain
 # static file server the bootstrap used to run: GET / is the panel, GET /<name> still serves ~/out files (so the
-# URLs the agent hands back keep working), /_out/ lists them, and /api/* reports status and starts/stops the app
+# URLs the agent hands back keep working; a browser gets text files wrapped in view.html, ?raw and ?download get
+# the bytes), /_out/ lists them, and /api/* reports status and starts/stops the app
 # and the revue server. Runs as `agent` from the bootstrap; stdlib only (python3 is guaranteed in the image). It
 # lives on the runtime mount at /agentbox, so edits need no image rebuild.
 import glob
@@ -18,7 +19,7 @@ import urllib.request
 from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import quote, unquote, urlsplit
 
 HOME = Path(os.environ.get("HOME", "/home/agent"))
 OUT_DIR = (HOME / "out").resolve()
@@ -32,6 +33,8 @@ REVUE_URL = os.environ.get("REVUE_PUBLIC_URL") or (f"http://{AGENT_HOST}:{REVUE_
 # the server is a signal to that pid, since revue has no stop command of its own.
 REVUE_STATE = str(HOME / ".local" / "state" / "revue" / "*" / "state.json")
 PANEL_HTML = Path(__file__).resolve().parent / "panel.html"
+VIEW_HTML = Path(__file__).resolve().parent / "view.html"
+VIEW_MAX = 5 * 1024 * 1024  # a bigger text file goes to the browser as it is
 LOGO_SVG = Path(__file__).resolve().parent / "logo.svg"
 WORKDIR = "/workspace"
 
@@ -91,6 +94,14 @@ def out_files(limit=100):
     return {"count": len(files), "files": files[:limit]}
 
 
+def human_size(n):
+    if n < 1024:
+        return f"{n} B"
+    if n < 1024 * 1024:
+        return f"{n / 1024:.{1 if n < 10240 else 0}f} KB"
+    return f"{n / 1024 / 1024:.1f} MB"
+
+
 def status():
     return {
         "agent": AGENT_NAME,
@@ -108,6 +119,53 @@ def safe_out_path(path):
     if target == OUT_DIR or OUT_DIR in target.parents:
         return target
     return None
+
+
+def view_kind(target, ctype):
+    # Which files get the viewer: bundles, and anything that is UTF-8 text the browser would otherwise download or
+    # show unformatted. Images, HTML, PDFs and media already display well on their own.
+    if target.suffix == ".bundle":
+        return "bundle"
+    if ctype.startswith(("image/", "video/", "audio/")) or ctype in ("text/html", "application/pdf"):
+        return None
+    if target.stat().st_size > VIEW_MAX:
+        return None
+    with open(target, "rb") as fh:
+        head = fh.read(8192)
+    if b"\0" in head:
+        return None
+    ext = target.suffix.lower()
+    if ext in (".md", ".markdown"):
+        return "markdown"
+    if ext == ".json":
+        return "json"
+    if ext in (".diff", ".patch"):
+        return "diff"
+    return "text"
+
+
+def bundle_summary(target, name):
+    # A git bundle starts with a text header: a signature line, then `-<sha>` for each commit it needs and
+    # `<sha> <ref>` for each ref it carries, up to a blank line (gitformat-bundle(5)). The commits are usually
+    # still in /workspace, since the agent made the bundle from there, so git can list them.
+    with open(target, "rb") as fh:
+        header = fh.read(65536).split(b"\n\n", 1)[0].decode("utf-8", "replace").splitlines()[1:]
+    prereqs = [ln[1:].split()[0] for ln in header if ln.startswith("-")]
+    heads = [ln.split(None, 1) for ln in header if ln and ln[0] not in "-@"]
+    lines = ["refs:"] + ["  " + " ".join(h) for h in heads]
+    lines += ["", "based on:"] + ["  " + p for p in prereqs or ["(nothing: the bundle carries the full history)"]]
+    if heads:
+        rc, out, _ = run(["git", "log", "--stat", "--format=%h %s  (%an, %ar)", "--max-count=50",
+                          *[h[0] for h in heads], *["^" + p for p in prereqs]], timeout=15)
+        lines += ["", "commits:", out.rstrip() if rc == 0 else "  (not in /workspace, so git cannot list them)"]
+    ref = heads[0][1] if heads and len(heads[0]) > 1 else "HEAD"
+    branch = target.stem
+    note = (
+        "<p>A git bundle. To fetch it into your checkout as branch <code>" + escape(branch) + "</code>:</p>"
+        "<pre>git fetch \"$(agentbox get " + escape(AGENT_NUM or "N") + " " + escape(name) + ")\" "
+        + escape(ref) + ":" + escape(branch) + "</pre>"
+    )
+    return "\n".join(lines) + "\n", note
 
 
 def revue_link(args):
@@ -157,7 +215,7 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-    def _send(self, code, body, ctype="application/json"):
+    def _send(self, code, body, ctype="application/json", headers=None):
         if isinstance(body, (dict, list)):
             body, ctype = json.dumps(body).encode(), "application/json"
         elif isinstance(body, str):
@@ -166,6 +224,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
@@ -185,24 +245,34 @@ class Handler(BaseHTTPRequestHandler):
         except FileNotFoundError:
             items = []
         rel = "/" if directory == OUT_DIR else "/" + str(directory.relative_to(OUT_DIR)) + "/"
-        rows = "".join(
-            '<li><a href="/{href}">{name}</a></li>'.format(
-                href=str(p.relative_to(OUT_DIR)) + ("/" if p.is_dir() else ""),
-                name=p.name + ("/" if p.is_dir() else ""),
-            )
-            for p in items
-        ) or "<li class=empty>empty</li>"
+
+        def row(p):
+            href = "/" + quote(p.relative_to(OUT_DIR).as_posix()) + ("/" if p.is_dir() else "")
+            if p.is_dir():
+                return '<li><span class=thumb></span><a href="{}">{}/</a></li>'.format(href, escape(p.name))
+            st = p.stat()
+            is_image = (mimetypes.guess_type(p.name)[0] or "").startswith("image/")
+            thumb = '<img loading=lazy src="{}" alt="">'.format(href) if is_image else ""
+            return '<li><span class=thumb>{}</span><a href="{}">{}</a><span class=meta>{}</span><span class=meta>{}</span></li>'.format(
+                thumb, href, escape(p.name), human_size(st.st_size), time.strftime("%b %d %H:%M", time.localtime(st.st_mtime)))
+
+        rows = "".join(row(p) for p in items) or "<li class=empty>empty</li>"
         html = (
             "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
-            "<title>" + escape(AGENT_NAME) + " out" + rel + "</title>"
-            "<style>body{font:14px/1.6 system-ui,sans-serif;margin:2rem;max-width:40rem;background:#0b0d12;color:#e6e8ee}"
-            "a{color:#8ab4ff}ul{list-style:none;padding:0}li{padding:.15rem 0}.empty{color:#7a8194}"
-            ".top{color:#7a8194;margin-bottom:1rem}</style>"
-            "<div class=top>~/out" + rel + " · <a href='/'>&larr; panel</a></div><ul>" + rows + "</ul>"
+            "<title>" + escape(AGENT_NAME) + " out" + rel + "</title><link rel=icon type=image/svg+xml href=/logo.svg>"
+            "<style>:root{color-scheme:light dark;--bg:#0b0d12;--fg:#e6e8ee;--dim:#8891a4;--line:#222835;--link:#8ab4ff}"
+            "@media (prefers-color-scheme:light){:root{--bg:#f6f7f9;--fg:#1a1d24;--dim:#66707f;--line:#e4e7ec;--link:#1a56db}}"
+            "body{font:14px/1.5 system-ui,sans-serif;margin:2rem auto;padding:0 1rem;max-width:52rem;background:var(--bg);color:var(--fg)}"
+            "ul{list-style:none;padding:0}li{display:flex;align-items:center;gap:.8rem;padding:.3rem 0;border-bottom:1px solid var(--line)}"
+            "li a{color:var(--fg);text-decoration:none;font:13px ui-monospace,Menlo,monospace;flex:1;min-width:0;overflow-wrap:anywhere}"
+            "li a:hover{color:var(--link)}.meta{color:var(--dim);font-size:.8rem;white-space:nowrap;font-variant-numeric:tabular-nums}"
+            ".thumb{width:64px;flex:none;text-align:center}.thumb img{max-width:64px;max-height:40px;border-radius:4px;vertical-align:middle}"
+            ".empty{color:var(--dim)}.top{color:var(--dim);margin-bottom:1rem}.top a{color:var(--link)}</style>"
+            "<div class=top>~/out" + escape(rel) + " · <a href='/'>&larr; panel</a></div><ul>" + rows + "</ul>"
         )
         self._send(200, html, "text/html; charset=utf-8")
 
-    def _out_file(self, path):
+    def _out_file(self, path, query):
         target = safe_out_path(path)
         if target is None:
             return self._send(404, "not found", "text/plain; charset=utf-8")
@@ -211,7 +281,35 @@ class Handler(BaseHTTPRequestHandler):
         if not target.is_file():
             return self._send(404, "not found", "text/plain; charset=utf-8")
         ctype = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
-        self._send(200, target.read_bytes(), ctype)
+        params = query.split("&")
+        if "download" in params:
+            return self._send(200, target.read_bytes(), ctype,
+                              {"Content-Disposition": "attachment; filename*=UTF-8''" + quote(target.name)})
+        # Only a browser asks for text/html; curl and the agent's own tools keep getting the file as it is.
+        kind = None if "raw" in params or "text/html" not in self.headers.get("Accept", "") else view_kind(target, ctype)
+        if kind is None:
+            if "raw" in params and view_kind(target, ctype) not in (None, "bundle"):
+                ctype = "text/plain; charset=utf-8"  # shown in the tab, not downloaded
+            return self._send(200, target.read_bytes(), ctype)
+        self._view(target, kind)
+
+    def _view(self, target, kind):
+        try:
+            page = VIEW_HTML.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return self._send(500, "view.html is missing next to this server", "text/plain; charset=utf-8")
+        name = target.relative_to(OUT_DIR).as_posix()
+        note = ""
+        if kind == "bundle":
+            text, note = bundle_summary(target, name)
+        else:
+            text = target.read_bytes().decode("utf-8", "replace")
+        st = target.stat()
+        data = {"name": name, "url": "/" + quote(name), "kind": kind,
+                "size": st.st_size, "mtime": int(st.st_mtime), "text": text, "note": note}
+        # `</` inside the JSON would end the script element early.
+        page = page.replace("__DATA__", json.dumps(data).replace("</", "<\\/"), 1)
+        self._send(200, page, "text/html; charset=utf-8")
 
     def _json_body(self):
         try:
@@ -224,7 +322,8 @@ class Handler(BaseHTTPRequestHandler):
         self.do_GET()
 
     def do_GET(self):
-        p = urlsplit(self.path).path
+        u = urlsplit(self.path)
+        p = u.path
         if p == "/":
             return self._panel()
         if p == "/logo.svg":
@@ -236,7 +335,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, status())
         if p in ("/_out", "/_out/"):
             return self._listing(OUT_DIR)
-        return self._out_file(p)
+        return self._out_file(p, u.query)
 
     def do_POST(self):
         p = urlsplit(self.path).path
