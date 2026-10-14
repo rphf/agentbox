@@ -109,7 +109,26 @@ cmd_init() {
 cmd_build() {
   load_settings
   # The project Dockerfile pulls the generic layer from the named build context (RUN --mount=...,from=agentbox).
-  docker build -t "$IMAGE" --build-context "agentbox=$HARNESS/image" "$@" "$PROJECT_DIR"
+  # Each simple `tool = "version"` in the repo's mise.toml [tools] becomes a TOOL_VERSION build arg (ruby →
+  # RUBY_VERSION), so the image follows the versions the repo pins; the Dockerfile declares the ARGs it uses.
+  local tool_args=() kv
+  if [ -f "$REPO_ROOT/mise.toml" ]; then
+    while IFS= read -r kv; do tool_args+=(--build-arg "$kv"); done < <(mise_tool_versions "$REPO_ROOT/mise.toml")
+  fi
+  docker build -t "$IMAGE" --build-context "agentbox=$HARNESS/image" ${tool_args[@]+"${tool_args[@]}"} "$@" "$PROJECT_DIR"
+}
+
+mise_tool_versions() {   # mise.toml [tools] → RUBY_VERSION=3.4.11 lines; skips backend tools (npm:x) and tables
+  awk '
+    /^[[:space:]]*\[/ { in_tools = ($0 ~ /^[[:space:]]*\[tools\][[:space:]]*$/); next }
+    in_tools && match($0, /^[[:space:]]*"?[A-Za-z0-9_-]+"?[[:space:]]*=[[:space:]]*"[^"]+"/) {
+      line = substr($0, RSTART, RLENGTH)
+      name = line; sub(/[[:space:]]*=.*/, "", name); gsub(/[[:space:]"]/, "", name)
+      ver = line; sub(/^[^=]*=[[:space:]]*"/, "", ver); sub(/"$/, "", ver)
+      name = toupper(name); gsub(/-/, "_", name)
+      print name "_VERSION=" ver
+    }
+  ' "$1"
 }
 
 cmd_up() {
