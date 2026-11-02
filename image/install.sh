@@ -6,7 +6,7 @@
 # revue, tmux, dnsmasq, socat, the net-log, gh, pbcopy, xclip and open scripts, git and sudo settings for the bot identity. The harness
 # bootstrap is not baked in: compose mounts <harness>/runtime at /agentbox and `agentbox up` runs it from there.
 # Build ARGs it honours when declared before the RUN line: PLAYWRIGHT_MCP_VERSION (default latest), NODE_VERSION,
-# REVUE_VERSION (default latest; a pin also rebuilds this layer, which is how a newer latest gets picked up).
+# REVUE_VERSION (default latest; it seeds a new home volume only, an existing box updates with `revue update`).
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 : "${PLAYWRIGHT_MCP_VERSION:=latest}"
@@ -40,12 +40,6 @@ curl -fsSL "https://github.com/dandavison/delta/releases/download/${DELTA_VERSIO
   | tar -xz -C /tmp
 install -m 755 "/tmp/delta-${DELTA_VERSION}-${delta_arch}/delta" /usr/local/bin/delta
 rm -rf "/tmp/delta-${DELTA_VERSION}-${delta_arch}"
-# revue: the human reviews agent diffs in it, the agent reads the feedback with its CLI.
-case "$REVUE_VERSION" in
-  latest) revue_url="https://github.com/rphf/revue/releases/latest/download/revue_linux_${arch}.tar.gz" ;;
-  *)      revue_url="https://github.com/rphf/revue/releases/download/v${REVUE_VERSION}/revue_linux_${arch}.tar.gz" ;;
-esac
-curl -fsSL "$revue_url" | tar -xz -C /usr/local/bin revue
 
 # gh-stack: GitHub's stacked pull requests, so a big change lands as a chain of small reviewable PRs. gh loads
 # extensions from the user's data directory only, and /home/agent is a volume, so an image rebuild alone would
@@ -108,6 +102,15 @@ rm -rf /usr/share/zsh-syntax-highlighting/.git
 # in for ~/.local/bin, which is not on PATH.
 su agent -s /bin/bash -c 'export HOME=/home/agent; curl -fsSL https://claude.ai/install.sh | bash'
 install -m 755 "$HERE/claude" /usr/local/bin/claude
+# revue: the human reviews agent diffs in it, the agent reads the feedback with its CLI. Installed as the agent into
+# /home/agent/.local/bin, like Claude Code above, so `revue update` can write to it; the shim stands in for that
+# directory on PATH.
+case "$REVUE_VERSION" in
+  latest) revue_url="https://github.com/rphf/revue/releases/latest/download/revue_linux_${arch}.tar.gz" ;;
+  *)      revue_url="https://github.com/rphf/revue/releases/download/v${REVUE_VERSION}/revue_linux_${arch}.tar.gz" ;;
+esac
+su agent -s /bin/bash -c "set -o pipefail; mkdir -p /home/agent/.local/bin && curl -fsSL '$revue_url' | tar -xz -C /home/agent/.local/bin revue"
+install -m 755 "$HERE/revue" /usr/local/bin/revue
 # ~/.local/bin on the interactive PATH too: the shim covers scripts and `docker exec`, but claude checks the PATH
 # itself and warns when it is missing, and anything else the agent installs for itself lands there as well.
 # The system rc file, not ~/.zshrc, which belongs to the human's home overlay.

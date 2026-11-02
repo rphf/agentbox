@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# revue shim: run the agent's own install. It lives in $HOME, a volume the agent owns, so `revue update` can write
+# to it. ~/.local/bin is not on PATH, so this stands in for it from /usr/local/bin. The image ships the install; the
+# bootstrap restores it if a home volume predates it.
+if [ -x "$HOME/.local/bin/revue" ]; then
+  exec "$HOME/.local/bin/revue" "$@"
+fi
+echo "revue: nothing installed in \$HOME/.local/bin — run: agentbox up again, or download a release into it" >&2
+exit 127

@@ -103,6 +103,15 @@ if [ ! -x "$HOME/.local/bin/claude" ]; then
     || echo "   could not install it; run: curl -fsSL https://claude.ai/install.sh | bash"
 fi
 
+# revue lives in $HOME for the same reason, so `revue update` can write to it.
+if [ ! -x "$HOME/.local/bin/revue" ]; then
+  echo "── installing revue into $HOME, so it can update itself"
+  mkdir -p "$HOME/.local/bin"
+  curl -fsSL "https://github.com/rphf/revue/releases/latest/download/revue_linux_$(dpkg --print-architecture).tar.gz" \
+    | tar -xz -C "$HOME/.local/bin" revue \
+    || echo "   could not install it; download a release from https://github.com/rphf/revue/releases into ~/.local/bin"
+fi
+
 mkdir -p "$HOME/out"
 
 python3 - <<'PY'
