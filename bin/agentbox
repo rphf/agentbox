@@ -108,8 +108,25 @@ cmd_init() {
 
 cmd_build() {
   load_settings
+  # Tool versions come from the repo's idiomatic files: .ruby-version, and package.json devEngines.runtime
+  # (lower bound of the range) and packageManager. A Dockerfile ARG with no default and no source file stops here.
+  local versions=() arg val pkg="$REPO_ROOT/package.json"
+  [ -f "$REPO_ROOT/.ruby-version" ] && versions+=("RUBY_VERSION=$(tr -d '[:space:]' < "$REPO_ROOT/.ruby-version")")
+  if [ -f "$pkg" ]; then
+    val="$(jq -r '.devEngines.runtime.version // empty' "$pkg" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+    [ -n "$val" ] && versions+=("NODE_VERSION=$val")
+    val="$(jq -r '.packageManager // empty' "$pkg" | sed -nE 's/^yarn@([^+]+).*/\1/p')"
+    [ -n "$val" ] && versions+=("YARN_VERSION=$val")
+  fi
+  for arg in $(sed -nE 's/^ARG ((RUBY|NODE|YARN)_VERSION) *$/\1/p' "$PROJECT_DIR/Dockerfile"); do
+    printf '%s\n' "${versions[@]}" | grep -q "^$arg=" \
+      || die "$arg: no version found (.ruby-version, package.json devEngines.runtime.version or packageManager)"
+  done
+  local build_args=()
+  for val in "${versions[@]}"; do build_args+=(--build-arg "$val"); done
+  echo "versions: ${versions[*]}"
   # The project Dockerfile pulls the generic layer from the named build context (RUN --mount=...,from=agentbox).
-  docker build -t "$IMAGE" --build-context "agentbox=$HARNESS/image" "$@" "$PROJECT_DIR"
+  docker build -t "$IMAGE" --build-context "agentbox=$HARNESS/image" "${build_args[@]}" "$@" "$PROJECT_DIR"
 }
 
 cmd_up() {

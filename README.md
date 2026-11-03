@@ -110,6 +110,11 @@ lazygit, delta, dnsmasq, socat, the `net-log`, `gh`, `pbcopy`, `xclip` and `open
 `agent`: Docker copies a mount point's ownership into an empty volume on first mount, which is all the ownership
 handling there is.
 
+`build` passes tool versions as build args, read from the repo's idiomatic files: `RUBY_VERSION` from
+`.ruby-version`, `NODE_VERSION` from the lower bound of `package.json` `devEngines.runtime.version`, and
+`YARN_VERSION` from `package.json` `packageManager`. If the Dockerfile declares one of these `ARG`s without a
+default and its file is missing, `build` stops.
+
 ### `compose.yml`
 
 An overlay. The base defines the `agent` service and its `src` and `home` volumes; the overlay adds services,
