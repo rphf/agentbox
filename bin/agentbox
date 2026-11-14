@@ -58,6 +58,7 @@ load_settings() {
   # leading underscore cannot collide with a project: PROJECT is also a compose project name, which must start
   # with a letter or a digit.
   AGENT_HOME_DIR="$CONFIG_DIR/home"
+  [ -d "$CONFIG_DIR/homes/$PROJECT" ] && AGENT_HOME_DIR="$CONFIG_DIR/homes/$PROJECT"
   GH_SECRETS_DIR="$CONFIG_DIR/secrets/$PROJECT"
   [ -d "$GH_SECRETS_DIR" ] || GH_SECRETS_DIR="$CONFIG_DIR/secrets/_shared"
   mkdir -p "$AGENT_HOME_DIR" "$GH_SECRETS_DIR"

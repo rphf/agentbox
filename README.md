@@ -185,14 +185,18 @@ is passed with `--env-file`.
 ~/.config/agentbox/
   env                    BOT_NAME, BOT_EMAIL, AGENT_SHELL, NET_LOG, AGENT_MEM_LIMIT, all optional
   home/                  overlaid onto every agent's home
+  homes/<project>/       used in place of home/ for that project, when it exists
   secrets/<project>/     mounted read-only at /run/secrets, falling back to secrets/_shared/
 ```
 
 `home/` is mounted read-only at `/agent-home` and overlaid onto `/home/agent` on every `up`: directories are
 merged so per-agent state such as `.claude/projects` stays local, files are linked so they follow your edits live
-and the agent cannot alter them. To grow it from an agent's work, have the agent write new skills and rules under
-`~/out/home`, laid out like `home/`, then copy the ones you keep:
-`d=$(agentbox get N home) && cp -R "$d/." ~/.config/agentbox/home/`. Secrets are per
+and the agent cannot alter them.
+
+A project that needs a home of its own gets `homes/<project>/`: when that folder exists, it is used in place of
+`home/`.
+
+Secrets are per
 project because the identity they carry is: a GitHub App belongs to one repo.
 
 ## What an agent gets
