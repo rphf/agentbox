@@ -2,11 +2,12 @@
 # agentbox generic image layer. A project Dockerfile runs it as root, on a Debian bookworm based image:
 #   RUN --mount=type=bind,from=agentbox,target=/agentbox /agentbox/install.sh
 # It installs: user `agent` (uid 1000) with /workspace, Node (only when the image has none), Claude Code,
-# Playwright MCP with Chromium and WebKit under /opt/ms-playwright, gh and the gh-stack extension, lazygit, delta,
-# revue, tmux, dnsmasq, socat, the net-log, gh, pbcopy, xclip and open scripts, git and sudo settings for the bot identity. The harness
+# Playwright MCP with Chromium and WebKit under /opt/ms-playwright, gh, git-spice, lazygit, delta,
+# revue, tmux, dnsmasq, socat, the net-log, gh, git-spice, pbcopy, xclip and open scripts, git and sudo settings for the bot identity. The harness
 # bootstrap is not baked in: compose mounts <harness>/runtime at /agentbox and `agentbox up` runs it from there.
 # Build ARGs it honours when declared before the RUN line: PLAYWRIGHT_MCP_VERSION (default latest), NODE_VERSION,
-# REVUE_VERSION (default latest; it seeds a new home volume only, an existing box updates with `revue update`).
+# REVUE_VERSION (default latest; it seeds a new home volume only, an existing box updates with `revue update`),
+# GIT_SPICE_VERSION (default latest, the newest release at build time; a number such as 0.33.0 pins it).
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 : "${PLAYWRIGHT_MCP_VERSION:=latest}"
@@ -14,7 +15,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 : "${NODE_VERSION:=24.15.0}"
 : "${LAZYGIT_VERSION:=0.65.1}"
 : "${DELTA_VERSION:=0.19.2}"
-: "${GH_STACK_VERSION:=0.1.1}"
+: "${GIT_SPICE_VERSION:=latest}"
 : "${ZSH_SYNTAX_HIGHLIGHTING_VERSION:=0.8.0}"
 export DEBIAN_FRONTEND=noninteractive
 
@@ -30,8 +31,8 @@ apt-get install -y --no-install-recommends gh
 
 arch="$(dpkg --print-architecture)"
 case "$arch" in
-  amd64) lazygit_arch=x86_64; delta_arch=x86_64-unknown-linux-gnu ;;
-  arm64) lazygit_arch=arm64;  delta_arch=aarch64-unknown-linux-gnu ;;
+  amd64) lazygit_arch=x86_64; delta_arch=x86_64-unknown-linux-gnu;  git_spice_arch=x86_64 ;;
+  arm64) lazygit_arch=arm64;  delta_arch=aarch64-unknown-linux-gnu; git_spice_arch=aarch64 ;;
   *) echo "unsupported arch $arch" >&2; exit 1 ;;
 esac
 curl -fsSL "https://github.com/jesseduffield/lazygit/releases/download/v${LAZYGIT_VERSION}/lazygit_${LAZYGIT_VERSION}_linux_${lazygit_arch}.tar.gz" \
@@ -41,23 +42,15 @@ curl -fsSL "https://github.com/dandavison/delta/releases/download/${DELTA_VERSIO
 install -m 755 "/tmp/delta-${DELTA_VERSION}-${delta_arch}/delta" /usr/local/bin/delta
 rm -rf "/tmp/delta-${DELTA_VERSION}-${delta_arch}"
 
-# gh-stack: GitHub's stacked pull requests, so a big change lands as a chain of small reviewable PRs. gh loads
-# extensions from the user's data directory only, and /home/agent is a volume, so an image rebuild alone would
-# never reach an agent that already exists. Keep the binary here; the harness bootstrap links it into $HOME.
-gh_stack_dir=/usr/local/share/gh/extensions/gh-stack
-install -d "$gh_stack_dir"
-curl -fsSL "https://github.com/github/gh-stack/releases/download/v${GH_STACK_VERSION}/linux-${arch}" \
-  -o "$gh_stack_dir/gh-stack"
-chmod 755 "$gh_stack_dir/gh-stack"
-# Without a manifest gh still runs the extension, but `gh extension list` shows it with no origin or version.
-cat > "$gh_stack_dir/manifest.yml" <<EOF
-owner: github
-name: gh-stack
-host: github.com
-tag: v${GH_STACK_VERSION}
-ispinned: true
-path: $gh_stack_dir/gh-stack
-EOF
+# git-spice: stacked pull requests, so a big change lands as a chain of small reviewable PRs. The real binary
+# goes to libexec; /usr/local/bin/git-spice is a shim that gives it the bot token.
+if [ "$GIT_SPICE_VERSION" = latest ]; then
+  git_spice_url="https://github.com/abhinav/git-spice/releases/latest/download"
+else
+  git_spice_url="https://github.com/abhinav/git-spice/releases/download/v${GIT_SPICE_VERSION}"
+fi
+install -d /usr/local/libexec
+curl -fsSL "$git_spice_url/git-spice.Linux-${git_spice_arch}.tar.gz" | tar -xz -C /usr/local/libexec git-spice
 
 if ! command -v node >/dev/null; then
   arch="$(dpkg --print-architecture)"
@@ -117,6 +110,7 @@ install -m 755 "$HERE/revue" /usr/local/bin/revue
 printf '\n# agentbox: the agent installs its own tools here (Claude Code among them)\n%s\n' \
   'case ":$PATH:" in *:"$HOME/.local/bin":*) ;; *) PATH="$HOME/.local/bin:$PATH" ;; esac' >> /etc/zsh/zshrc
 install -m 755 "$HERE/gh" /usr/local/bin/gh
+install -m 755 "$HERE/git-spice" /usr/local/bin/git-spice
 install -m 755 "$HERE/pbcopy" /usr/local/bin/pbcopy
 install -m 755 "$HERE/xclip" /usr/local/bin/xclip
 install -m 755 "$HERE/open" /usr/local/bin/open

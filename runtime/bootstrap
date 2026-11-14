@@ -2,7 +2,7 @@
 # /agentbox/bootstrap — run as `agent` by `agentbox up` from the read-only runtime mount, on every `up`. Idempotent.
 # Editing this file needs no image rebuild.
 # 1. clone the project into /workspace from REPO_URL
-# 2. overlay /agent-home (your agent config, real files) onto $HOME
+# 2. overlay /agent-home (your agent config) onto $HOME
 # 3. write ~/AGENTBOX.md and start the control panel
 # `agentbox up` runs this, then copies the project's host-files in, then runs agentbox-project-bootstrap. The
 # host checkout is not mounted, so only the CLI can put host files here — which is what lets a box run elsewhere.
@@ -164,10 +164,10 @@ git bundle create "\$HOME/out/\$(git branch --show-current).bundle" ${REPO_BRANC
 
 The human fetches that bundle and pushes it themselves.
 
-When a change is too big to read as one diff, stack it: \`gh stack\` splits it into a chain of pull requests that
-each target the one below, so each layer is reviewed on its own. \`gh stack add -Am "message"\` starts the next
-layer, \`gh stack submit\` pushes the chain and opens the pull requests, and \`gh stack\` alone shows where each
-one stands. Every branch has to live in this repository; a stack cannot cross a fork.
+When a change is too big to read as one diff, stack it with \`git-spice\`: a chain of pull requests that each
+target the one below, so each layer is reviewed on its own. \`git-spice branch create <name> -m "message"\` starts
+the next layer, \`git-spice stack submit\` pushes the chain and opens the pull requests, and \`git-spice log short\`
+shows where each one stands. Every branch has to live in this repository; a stack cannot cross a fork.
 
 ## What is around you
 

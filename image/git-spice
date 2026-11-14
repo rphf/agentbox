@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# git-spice shim: authenticate as the GitHub App bot with the token file agentbox mounts at /run/secrets/gh-token.
+# Sits on PATH (/usr/local/bin) and hands off to the real binary. Without the file, plain git-spice.
+if [ -z "${GITHUB_TOKEN:-}" ] && [ -r /run/secrets/gh-token ]; then
+  GITHUB_TOKEN="$(cat /run/secrets/gh-token)"
+  export GITHUB_TOKEN
+fi
+exec /usr/local/libexec/git-spice "$@"
