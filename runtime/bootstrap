@@ -4,6 +4,7 @@
 # 1. clone the project into /workspace from REPO_URL
 # 2. overlay /agent-home (your agent config) onto $HOME
 # 3. write ~/AGENTBOX.md and start the control panel
+# 4. run your personal bootstrap, ~/.agentbox/bootstrap from the overlay, when there is one
 # `agentbox up` runs this, then copies the project's host-files in, then runs agentbox-project-bootstrap. The
 # host checkout is not mounted, so only the CLI can put host files here — which is what lets a box run elsewhere.
 set -euo pipefail
@@ -192,5 +193,12 @@ EOF
 if [ -n "${OUT_PORT:-}" ] && ! ss -ltnH "sport = :$OUT_PORT" 2>/dev/null | grep -q .; then
   setsid python3 /agentbox/panel >/dev/null 2>&1 </dev/null &
   disown 2>/dev/null || true
+fi
+
+# Personal bootstrap: an executable .agentbox/bootstrap in your home overlay, the personal twin of the project's.
+# It is yours, not the project's, so a failure is reported and the up goes on.
+if [ -x "$HOME/.agentbox/bootstrap" ]; then
+  echo "── personal bootstrap"
+  "$HOME/.agentbox/bootstrap" || echo "   personal bootstrap failed (exit $?), continuing"
 fi
 

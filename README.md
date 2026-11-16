@@ -56,7 +56,7 @@ one-shot services that ran to completion. Names: compose project `<project>-agen
 | --- | --- | --- |
 | Harness | this repo | `bin/agentbox`, `compose.base.yml`, `image/`, `runtime/bootstrap`, `env.example` |
 | Project | `<repo>/.agentbox/` | `project.env`, `Dockerfile`, `compose.yml`, `bootstrap`, `app`, `AGENT.md`, optional `host-files`, `setup` and `.env` |
-| Personal | `~/.config/agentbox/` | `env`, `home/`, `secrets/<project>/` |
+| Personal | `~/.config/agentbox/` | `env`, `home/` (with an optional `.agentbox/bootstrap`), `secrets/<project>/` |
 
 Three stock Docker features glue them together, no templating:
 
@@ -184,6 +184,7 @@ is passed with `--env-file`.
 ~/.config/agentbox/
   env                    BOT_NAME, BOT_EMAIL, AGENT_SHELL, NET_LOG, AGENT_MEM_LIMIT, all optional
   home/                  overlaid onto every agent's home
+    .agentbox/bootstrap  your personal bootstrap, run on every up when it is executable
   homes/<project>/       used in place of home/ for that project, when it exists
   secrets/<project>/     mounted read-only at /run/secrets, falling back to secrets/_shared/
 ```
@@ -194,6 +195,12 @@ and the agent cannot alter them.
 
 A project that needs a home of its own gets `homes/<project>/`: when that folder exists, it is used in place of
 `home/`.
+
+An executable `.agentbox/bootstrap` in that folder is your personal bootstrap, the twin of the project's. It runs
+as `agent` in `/workspace` on every `up`, after the clone and the home overlay and before the `host-files` copy and
+the project `bootstrap`, so it can set up what is yours alone: tools of your own, a git hook in the clone. Keep it
+idempotent and quiet. Its files reach it read-only through the overlay, so copy what has to be writable into the
+home. A failure prints one line and `up` goes on.
 
 Secrets are per
 project because the identity they carry is: a GitHub App belongs to one repo.
