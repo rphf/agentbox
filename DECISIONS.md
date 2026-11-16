@@ -53,6 +53,10 @@ the first project's repository.
 - **Agents reach the whole internet.** No firewall, like local agents today. Every resolved hostname is logged
   instead (`NET_LOG`, `net-log hosts`). Hostnames only: HTTPS hides paths, and a connection straight to an IP is
   not seen.
+- **git is built from a release tarball.** Debian bookworm ships git 2.39 and bookworm-backports has none, and
+  config-based hooks (`hook.<name>.command`) need 2.54. The pinned tarball is checked against kernel.org's signed
+  checksum and built into `/usr/local`, without Rust (optional before git 3.0). The distribution's git stays because
+  `gh` depends on it; `/usr/local/bin` comes first on PATH.
 - **Claude Code is the only agent CLI in the image.** Playwright ships Chromium and WebKit.
 
 - **One directory for anything personal**, at fixed paths. `~/.config/agentbox/` holds the settings, the home

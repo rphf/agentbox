@@ -2,12 +2,13 @@
 # agentbox generic image layer. A project Dockerfile runs it as root, on a Debian bookworm based image:
 #   RUN --mount=type=bind,from=agentbox,target=/agentbox /agentbox/install.sh
 # It installs: user `agent` (uid 1000) with /workspace, Node (only when the image has none), Claude Code,
-# Playwright MCP with Chromium and WebKit under /opt/ms-playwright, gh, git-spice, lazygit, delta,
+# Playwright MCP with Chromium and WebKit under /opt/ms-playwright, git built from a release, gh, git-spice, lazygit, delta,
 # revue, tmux, dnsmasq, socat, the net-log, gh, git-spice, pbcopy, xclip and open scripts, git and sudo settings for the bot identity. The harness
 # bootstrap is not baked in: compose mounts <harness>/runtime at /agentbox and `agentbox up` runs it from there.
 # Build ARGs it honours when declared before the RUN line: PLAYWRIGHT_MCP_VERSION (default latest), NODE_VERSION,
 # REVUE_VERSION (default latest; it seeds a new home volume only, an existing box updates with `revue update`),
-# GIT_SPICE_VERSION (default latest, the newest release at build time; a number such as 0.33.0 pins it).
+# GIT_SPICE_VERSION (default latest, the newest release at build time; a number such as 0.33.0 pins it),
+# GIT_VERSION with its GIT_SHA256 (the tarball's line in kernel.org's signed sha256sums.asc).
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 : "${PLAYWRIGHT_MCP_VERSION:=latest}"
@@ -16,13 +17,33 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 : "${LAZYGIT_VERSION:=0.65.1}"
 : "${DELTA_VERSION:=0.19.2}"
 : "${GIT_SPICE_VERSION:=latest}"
+: "${GIT_VERSION:=2.56.1}"
+: "${GIT_SHA256:=f0b0bf89264b9bd2e1c640363e7529643989da76281600473c50745cd34a607f}"
 : "${ZSH_SYNTAX_HIGHLIGHTING_VERSION:=0.8.0}"
 export DEBIAN_FRONTEND=noninteractive
 
 apt-get update
 apt-get install -y --no-install-recommends \
-  curl ca-certificates gnupg git jq less vim tmux procps sudo xz-utils \
-  dnsmasq socat iproute2 zsh
+  curl ca-certificates gnupg jq less vim tmux procps sudo xz-utils \
+  dnsmasq socat iproute2 zsh libcurl4 libexpat1 libpcre2-8-0 zlib1g
+
+# git from the release tarball: Debian bookworm ships 2.39, bookworm-backports has no git, and config-based hooks
+# (hook.<name>.command and hook.<name>.event) need 2.54. It goes to /usr/local, ahead of the distribution's git on
+# PATH (gh depends on that package, so it stays), and reads its system config from /etc like the distribution's.
+# The build packages the base image does not have are removed again in this layer.
+git_build_packages="make gcc libc6-dev libcurl4-openssl-dev libexpat1-dev libpcre2-dev libssl-dev zlib1g-dev"
+git_added_packages="$(for package in $git_build_packages; do
+  dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'ok installed' || echo "$package"
+done)"
+[ -z "$git_added_packages" ] || apt-get install -y --no-install-recommends $git_added_packages
+curl -fsSL "https://mirrors.edge.kernel.org/pub/software/scm/git/git-${GIT_VERSION}.tar.xz" -o /tmp/git.tar.xz
+echo "$GIT_SHA256  /tmp/git.tar.xz" | sha256sum -c -
+tar -xJf /tmp/git.tar.xz -C /tmp
+make -C "/tmp/git-${GIT_VERSION}" -j"$(nproc)" prefix=/usr/local sysconfdir=/etc \
+  INSTALL_STRIP=-s USE_LIBPCRE2=1 NO_RUST=1 NO_GETTEXT=1 NO_PERL=1 NO_PYTHON=1 NO_TCLTK=1 install >/dev/null
+rm -rf /tmp/git.tar.xz "/tmp/git-${GIT_VERSION}"
+[ -z "$git_added_packages" ] || apt-get purge -y --auto-remove $git_added_packages
+/usr/local/bin/git --version
 curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
   > /etc/apt/sources.list.d/github-cli.list
